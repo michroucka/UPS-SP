@@ -8,7 +8,7 @@ BUILD_DIR = build
 IP ?= 127.0.0.1
 PORT ?= 10000
 C ?= 10
-R ?= 10
+R ?= 5
 
 # Všechny zdrojové soubory
 SOURCES = $(wildcard $(SRC_DIR)/*.cpp)
