@@ -24,6 +24,11 @@ public class GameClient {
     private int playerHandValue;      // Hodnota hráčovy ruky (ze serveru)
     private int opponentHandValue;    // Hodnota soupeřovy ruky (ze serveru)
 
+    // Reconnect query info
+    private boolean hasPendingReconnectQuery;
+    private String reconnectRoomId;
+    private String reconnectOpponentNickname;
+
     /**
      * Client states
      */
@@ -61,16 +66,35 @@ public class GameClient {
     }
 
     /**
-     * Logs in with a nickname
+     * Logs in with a nickname (new login)
      * @param nickname player nickname
      * @return true if successful
      */
     public boolean login(String nickname) {
+        return login(nickname, null);
+    }
+
+    /**
+     * Logs in with nickname and session ID (reconnect)
+     * @param nickname player nickname
+     * @param sessionId session ID for reconnect (null for new login)
+     * @return true if successful
+     */
+    public boolean login(String nickname, String sessionId) {
         if (state != ClientState.CONNECTED) {
             return false;
         }
 
-        ProtocolMessage loginMsg = ProtocolMessage.login(nickname);
+        ProtocolMessage loginMsg;
+        if (sessionId != null && !sessionId.isEmpty()) {
+            // Reconnect - include session ID
+            loginMsg = new ProtocolMessage("LOGIN", nickname, sessionId);
+            System.out.println("Reconnect attempt with session ID: " + sessionId);
+        } else {
+            // New login
+            loginMsg = ProtocolMessage.login(nickname);
+        }
+
         if (!networkClient.send(loginMsg.toString())) {
             return false;
         }
@@ -87,6 +111,25 @@ public class GameClient {
 
         if (msg.isError()) {
             System.err.println("Login failed: " + msg.getErrorMessage());
+
+            // Clear session ID if expired/invalid
+            String errorMsg = msg.getErrorMessage();
+            if (errorMsg != null && errorMsg.contains("Session")) {
+                this.sessionId = null;
+            }
+            return false;
+        }
+
+        if ("RECONNECT_QUERY".equals(msg.getCommand())) {
+            // Server is asking if we want to reconnect to an ongoing game
+            if (msg.getParameterCount() >= 2) {
+                this.hasPendingReconnectQuery = true;
+                this.reconnectRoomId = msg.getParameter(0);
+                this.reconnectOpponentNickname = msg.getParameter(1);
+                this.nickname = nickname;  // Store nickname for later
+                System.out.println("Reconnect query received - room: " + reconnectRoomId + ", opponent: " + reconnectOpponentNickname);
+                return true;  // Return true - caller should check hasPendingReconnectQuery()
+            }
             return false;
         }
 
@@ -94,6 +137,7 @@ public class GameClient {
             this.sessionId = msg.getParameter(0);
             this.nickname = nickname;
             this.state = ClientState.LOBBY;
+            this.hasPendingReconnectQuery = false;  // Clear any pending query
             return true;
         }
 
@@ -360,6 +404,10 @@ public class GameClient {
         return sessionId;
     }
 
+    public NetworkClient getNetworkClient() {
+        return networkClient;
+    }
+
     public List<String> getPlayerCards() {
         return new ArrayList<>(playerCards);
     }
@@ -465,5 +513,115 @@ public class GameClient {
         this.currentRoomId = null;
         this.playerHandValue = 0;
         this.opponentHandValue = 0;
+    }
+
+    // Reconnect query methods
+
+    /**
+     * Checks if there is a pending reconnect query from the server
+     * @return true if server asked whether to reconnect
+     */
+    public boolean hasPendingReconnectQuery() {
+        return hasPendingReconnectQuery;
+    }
+
+    /**
+     * Gets the room ID for pending reconnect
+     * @return room ID or null
+     */
+    public String getReconnectRoomId() {
+        return reconnectRoomId;
+    }
+
+    /**
+     * Gets the opponent nickname for pending reconnect
+     * @return opponent nickname or null
+     */
+    public String getReconnectOpponentNickname() {
+        return reconnectOpponentNickname;
+    }
+
+    /**
+     * Accepts the reconnect query and rejoins the game
+     * @return true if successful
+     */
+    public boolean acceptReconnect() {
+        if (!hasPendingReconnectQuery) {
+            return false;
+        }
+
+        // Send RECONNECT_ACCEPT
+        if (!networkClient.send(ProtocolMessage.reconnectAccept().toString())) {
+            return false;
+        }
+
+        // Wait for OK response with session ID
+        String response = networkClient.receive();
+        if (response == null) {
+            return false;
+        }
+
+        ProtocolMessage msg = ProtocolMessage.parse(response);
+        if (msg == null) {
+            return false;
+        }
+
+        if (msg.isError()) {
+            System.err.println("Reconnect accept failed: " + msg.getErrorMessage());
+            hasPendingReconnectQuery = false;
+            return false;
+        }
+
+        if ("OK".equals(msg.getCommand()) && msg.getParameterCount() > 0) {
+            this.sessionId = msg.getParameter(0);
+            this.state = ClientState.PLAYING;  // Reconnecting to game
+            this.hasPendingReconnectQuery = false;
+            System.out.println("Reconnect accepted, session ID: " + sessionId);
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * Declines the reconnect query and starts fresh in lobby
+     * @return true if successful
+     */
+    public boolean declineReconnect() {
+        if (!hasPendingReconnectQuery) {
+            return false;
+        }
+
+        // Send RECONNECT_DECLINE
+        if (!networkClient.send(ProtocolMessage.reconnectDecline().toString())) {
+            return false;
+        }
+
+        // Wait for OK response with new session ID
+        String response = networkClient.receive();
+        if (response == null) {
+            return false;
+        }
+
+        ProtocolMessage msg = ProtocolMessage.parse(response);
+        if (msg == null) {
+            return false;
+        }
+
+        if (msg.isError()) {
+            System.err.println("Reconnect decline failed: " + msg.getErrorMessage());
+            hasPendingReconnectQuery = false;
+            return false;
+        }
+
+        if ("OK".equals(msg.getCommand()) && msg.getParameterCount() > 0) {
+            this.sessionId = msg.getParameter(0);
+            this.state = ClientState.LOBBY;
+            this.hasPendingReconnectQuery = false;
+            System.out.println("Reconnect declined, starting fresh in lobby");
+            return true;
+        }
+
+        return false;
     }
 }

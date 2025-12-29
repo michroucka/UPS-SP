@@ -147,6 +147,18 @@ void Room::startGame() {
     game->start();
 }
 
+void Room::resetGame() {
+    std::lock_guard<std::mutex> lock(roomMutex);
+
+    if (game) {
+        delete game;
+        game = nullptr;
+    }
+
+    state = ROOM_WAITING;
+    LOG_INFO("Room " + std::to_string(id) + " game reset, state set to WAITING");
+}
+
 void Room::checkAndHandleGameEnd() {
     if (!game) {
         return;

@@ -47,6 +47,8 @@ private:
     void handleAckRoundEnd(Client* client);
     void handleAckGameEnd(Client* client);
     void handleAckGameState(Client* client);
+    void handleReconnectAccept(Client* client);
+    void handleReconnectDecline(Client* client);
 
     // Validace
     bool validateMessage(Client* client, const std::vector<std::string>& parts, size_t expectedSize);
@@ -55,6 +57,7 @@ private:
     // Utility
     bool isNicknameTaken(const std::string& nickname);
     void cleanupTimedOutClients();
+    void cleanupTimedOutDisconnectedPlayers();
     Room* getRoomForClient(Client* client);
 
     // Konfigurace serveru

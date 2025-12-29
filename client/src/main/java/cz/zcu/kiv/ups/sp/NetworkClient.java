@@ -16,6 +16,12 @@ public class NetworkClient {
     private int serverPort;
     private boolean connected;
 
+    // Heartbeat mechanism for detecting server unavailability
+    private volatile boolean heartbeatRunning = false;
+    private Thread heartbeatThread;
+    private static final int HEARTBEAT_INTERVAL_MS = 10000;  // 10 seconds
+    private static final int HEARTBEAT_TIMEOUT_MS = 5000;     // 5 seconds timeout
+
     /**
      * Creates a new network client
      * @param host server hostname
@@ -117,6 +123,62 @@ public class NetworkClient {
             connected = false;
         } catch (IOException e) {
             System.err.println("Error closing connection: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Starts heartbeat mechanism to detect server unavailability
+     * @param onConnectionLost callback to run when connection is lost
+     */
+    public void startHeartbeat(Runnable onConnectionLost) {
+        if (heartbeatRunning) {
+            return;
+        }
+
+        heartbeatRunning = true;
+        heartbeatThread = new Thread(() -> {
+            int consecutiveFailures = 0;
+            while (heartbeatRunning && connected) {
+                try {
+                    Thread.sleep(HEARTBEAT_INTERVAL_MS);
+
+                    if (!connected) break;
+
+                    // Send PING to test connection
+                    // Note: We don't read PONG here because message receiver thread handles all incoming messages
+                    // If send fails, connection is lost
+                    if (!send("PING")) {
+                        consecutiveFailures++;
+                        System.err.println("Heartbeat: Failed to send PING (failure " + consecutiveFailures + ")");
+
+                        // After 2 consecutive failures, consider connection lost
+                        if (consecutiveFailures >= 2) {
+                            System.err.println("Heartbeat: Connection lost after " + consecutiveFailures + " failures");
+                            onConnectionLost.run();
+                            break;
+                        }
+                    } else {
+                        // PING sent successfully, reset failure counter
+                        consecutiveFailures = 0;
+                    }
+
+                } catch (InterruptedException e) {
+                    break;
+                }
+            }
+            heartbeatRunning = false;
+        });
+        heartbeatThread.setDaemon(true);
+        heartbeatThread.start();
+    }
+
+    /**
+     * Stops the heartbeat mechanism
+     */
+    public void stopHeartbeat() {
+        heartbeatRunning = false;
+        if (heartbeatThread != null) {
+            heartbeatThread.interrupt();
         }
     }
 

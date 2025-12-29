@@ -178,6 +178,9 @@ void Server::run() {
 
         // Cleanup timed out klientů
         cleanupTimedOutClients();
+
+        // Cleanup timed out disconnected players (5 minute timeout)
+        cleanupTimedOutDisconnectedPlayers();
     }
 
     LOG_INFO("Server terminated");
@@ -376,6 +379,10 @@ void Server::processMessage(Client* client, const std::string& message) {
         handleAckGameEnd(client);
     } else if (command == Protocol::CMD_ACK_GAME_STATE) {
         handleAckGameState(client);
+    } else if (command == Protocol::CMD_RECONNECT_ACCEPT) {
+        handleReconnectAccept(client);
+    } else if (command == Protocol::CMD_RECONNECT_DECLINE) {
+        handleReconnectDecline(client);
     } else {
         handleInvalidMessage(client, "Invalid command: " + command);
     }
@@ -385,7 +392,9 @@ void Server::processMessage(Client* client, const std::string& message) {
  * Zpracuje LOGIN příkaz.
  */
 void Server::handleLogin(Client* client, const std::vector<std::string>& parts) {
-    if (!validateMessage(client, parts, 2)) {
+    // Accept 2 parameters (LOGIN|nickname) or 3 (LOGIN|nickname|sessionId)
+    if (parts.size() != 2 && parts.size() != 3) {
+        handleInvalidMessage(client, "Invalid parameter count");
         return;
     }
 
@@ -395,175 +404,236 @@ void Server::handleLogin(Client* client, const std::vector<std::string>& parts) 
     }
 
     std::string nickname = parts[1];
+    std::string providedSessionId = (parts.size() == 3) ? parts[2] : "";
+    bool isReconnectAttempt = !providedSessionId.empty();
 
     if (!Protocol::isValidNickname(nickname)) {
         client->queueMessage(Protocol::buildMessage({Protocol::CMD_ERROR, "Invalid nickname"}));
         return;
     }
 
+    // Set nickname early so it's available in reconnect handlers
+    client->setNickname(nickname);
+
     // Check if this is a reconnect attempt
     auto disconnectedIt = disconnectedPlayers.find(nickname);
     if (disconnectedIt != disconnectedPlayers.end()) {
-        // This is a RECONNECT!
+        // Player is in disconnected list
         DisconnectedPlayerInfo& info = disconnectedIt->second;
-        LOG_INFO("Player " + nickname + " is reconnecting (roomId=" + std::to_string(info.roomId) + ")");
 
-        // Restore player info
-        client->setNickname(nickname);
-        client->setSessionId(info.sessionId);
+        if (isReconnectAttempt) {
+            // Validate session ID
+            if (providedSessionId != info.sessionId) {
+                LOG_WARNING("Invalid session ID for reconnect by " + nickname);
+                client->queueMessage(Protocol::buildMessage({Protocol::CMD_ERROR, "Invalid session ID"}));
+                return;
+            }
 
-        // Find the room
-        auto roomIt = rooms.find(info.roomId);
-        if (roomIt != rooms.end()) {
-            Room* room = roomIt->second.get();
+            LOG_INFO("Player " + nickname + " reconnecting with valid session ID (roomId=" + std::to_string(info.roomId) + ")");
 
-            // Reconnect player to room
-            room->reconnectPlayer(client);
+            // Restore player info
+            client->setNickname(nickname);
+            client->setSessionId(info.sessionId);
 
-            LOG_INFO("Player " + nickname + " returned to room " + std::to_string(info.roomId));
+            // Find the room
+            auto roomIt = rooms.find(info.roomId);
+            if (roomIt != rooms.end()) {
+                Room* room = roomIt->second.get();
 
-            // Send OK with session ID
-            client->queueMessage(Protocol::buildMessage({Protocol::CMD_OK, client->getSessionId()}));
+                // Reconnect player to room
+                room->reconnectPlayer(client);
 
-            // Send game state to reconnected player
-            Game* game = room->getGame();
-            if (game) {
-                // Find the player by nickname and update their client pointer
-                Player* reconnectedPlayer = game->getPlayerByNickname(nickname);
-                if (reconnectedPlayer) {
-                    // Update the client pointer to the new connection
-                    reconnectedPlayer->client = client;
-                    LOG_INFO("Updated client pointer for player " + nickname);
+                LOG_INFO("Player " + nickname + " returned to room " + std::to_string(info.roomId));
+
+                // Send OK with session ID
+                client->queueMessage(Protocol::buildMessage({Protocol::CMD_OK, client->getSessionId()}));
+
+                // Send game state to reconnected player
+                Game* game = room->getGame();
+                if (game) {
+                    // Find the player by nickname and update their client pointer
+                    Player* reconnectedPlayer = game->getPlayerByNickname(nickname);
+                    if (reconnectedPlayer) {
+                        // Update the client pointer to the new connection
+                        reconnectedPlayer->client = client;
+                        LOG_INFO("Updated client pointer for player " + nickname);
+                    }
+
+                    // Now get the opponent (this will work correctly since we updated the client pointer)
+                    const Player* opponent = game->getOpponent(client);
+
+                    if (reconnectedPlayer && opponent) {
+                        // Check if opponent is actually connected (not in disconnectedPlayers)
+                        std::string opponentNickname = opponent->nickname;  // Use stored nickname, not client->getNickname()
+                        bool opponentIsDisconnected = (disconnectedPlayers.find(opponentNickname) != disconnectedPlayers.end());
+
+                        if (opponentIsDisconnected) {
+                            // Opponent is still disconnected - inform reconnected player
+                            // DON'T send GAME_START yet - wait until both players are connected
+                            LOG_INFO("Player " + nickname + " reconnected, but opponent " + opponentNickname + " is still disconnected");
+
+                            client->queueMessage(Protocol::buildMessage({
+                                Protocol::CMD_PLAYER_DISCONNECTED,
+                                opponentNickname
+                            }));
+
+                            // Don't send GAME_START or game state - player should wait for opponent
+                        } else {
+                            // Opponent is connected - NOW send GAME_START to both players
+                            LOG_INFO("Player " + nickname + " reconnected, opponent " + opponentNickname + " is connected");
+
+                            std::string role = game->getPlayerRole(client);
+                            std::string opponentRole = game->getPlayerRole(opponent->client);
+
+                            // Send GAME_START to reconnected player
+                            client->queueMessage(Protocol::buildMessage({
+                                Protocol::CMD_GAME_START,
+                                role,
+                                opponentNickname
+                            }));
+
+                            // Send GAME_STATE
+                            game->notifyGameState();
+
+                            // Send player's cards
+                            if (!reconnectedPlayer->hand.empty()) {
+                                std::vector<std::string> dealCardsMsg = {
+                                    Protocol::CMD_DEAL_CARDS,
+                                    std::to_string(reconnectedPlayer->hand.size())
+                                };
+                                for (const Card& card : reconnectedPlayer->hand) {
+                                    dealCardsMsg.push_back(card.toString());
+                                }
+                                client->queueMessage(Protocol::buildMessage(dealCardsMsg));
+                            }
+
+                            // If it's player's turn, send YOUR_TURN
+                            if (game->isPlayerTurn(client)) {
+                                game->notifyYourTurn(const_cast<Player*>(reconnectedPlayer));
+                            }
+
+                            // Notify opponent about reconnect
+                            opponent->client->queueMessage(Protocol::buildMessage({
+                                Protocol::CMD_PLAYER_RECONNECTED,
+                                reconnectedPlayer->client->getNickname()
+                            }));
+
+                            // Send GAME_START to opponent (they didn't get it when they reconnected because other player was disconnected)
+                            opponent->client->queueMessage(Protocol::buildMessage({
+                                Protocol::CMD_GAME_START,
+                                opponentRole,
+                                reconnectedPlayer->nickname
+                            }));
+
+                            // Send opponent's cards
+                            if (!opponent->hand.empty()) {
+                                std::vector<std::string> opponentCardsMsg = {
+                                    Protocol::CMD_DEAL_CARDS,
+                                    std::to_string(opponent->hand.size())
+                                };
+                                for (const Card& card : opponent->hand) {
+                                    opponentCardsMsg.push_back(card.toString());
+                                }
+                                opponent->client->queueMessage(Protocol::buildMessage(opponentCardsMsg));
+                            }
+
+                            // If it's opponent's turn, send YOUR_TURN
+                            if (game->isPlayerTurn(opponent->client)) {
+                                game->notifyYourTurn(const_cast<Player*>(opponent));
+                            }
+                        }
+                    }
+
+                    LOG_INFO("Reconnected player - sent game state to both players");
                 }
 
-                // Now get the opponent (this will work correctly since we updated the client pointer)
-                const Player* opponent = game->getOpponent(client);
+                // Remove from disconnected players
+                disconnectedPlayers.erase(disconnectedIt);
 
-                if (reconnectedPlayer && opponent) {
-                    // Check if opponent is actually connected (not in disconnectedPlayers)
-                    std::string opponentNickname = opponent->nickname;  // Use stored nickname, not client->getNickname()
-                    bool opponentIsDisconnected = (disconnectedPlayers.find(opponentNickname) != disconnectedPlayers.end());
+                // Log state for recovery
+                std::map<std::string, std::string> reconnectData = {
+                    {"nickname", nickname},
+                    {"roomId", std::to_string(info.roomId)}
+                };
+                LOG_STATE("PLAYER_RECONNECT", reconnectData);
 
-                    if (opponentIsDisconnected) {
-                        // Opponent is still disconnected - inform reconnected player
-                        // DON'T send GAME_START yet - wait until both players are connected
-                        LOG_INFO("Player " + nickname + " reconnected, but opponent " + opponentNickname + " is still disconnected");
+                return;
+            } else {
+                // Room doesn't exist anymore
+                LOG_WARNING("Room " + std::to_string(info.roomId) + " no longer exists for reconnect of " + nickname);
+                disconnectedPlayers.erase(disconnectedIt);
+                activeNicknames.erase(nickname);
+                client->queueMessage(Protocol::buildMessage({Protocol::CMD_ERROR, "Session expired"}));
+                return;
+            }
+        } else {
+            // No session ID provided but player is in disconnected list
+            // This is a reconnect situation (client restarted, lost session ID)
+            // Send RECONNECT_QUERY to ask user if they want to reconnect
+            LOG_INFO("Player " + nickname + " in disconnected list without session ID - sending reconnect prompt");
 
-                        client->queueMessage(Protocol::buildMessage({
-                            Protocol::CMD_PLAYER_DISCONNECTED,
-                            opponentNickname
-                        }));
+            int roomId = info.roomId;
 
-                        // Don't send GAME_START or game state - player should wait for opponent
-                    } else {
-                        // Opponent is connected - NOW send GAME_START to both players
-                        LOG_INFO("Player " + nickname + " reconnected, opponent " + opponentNickname + " is connected");
-
-                        std::string role = game->getPlayerRole(client);
-                        std::string opponentRole = game->getPlayerRole(opponent->client);
-
-                        // Send GAME_START to reconnected player
-                        client->queueMessage(Protocol::buildMessage({
-                            Protocol::CMD_GAME_START,
-                            role,
-                            opponentNickname
-                        }));
-
-                        // Send GAME_STATE
-                        game->notifyGameState();
-
-                        // Send player's cards
-                        if (!reconnectedPlayer->hand.empty()) {
-                            std::vector<std::string> dealCardsMsg = {
-                                Protocol::CMD_DEAL_CARDS,
-                                std::to_string(reconnectedPlayer->hand.size())
-                            };
-                            for (const Card& card : reconnectedPlayer->hand) {
-                                dealCardsMsg.push_back(card.toString());
-                            }
-                            client->queueMessage(Protocol::buildMessage(dealCardsMsg));
-                        }
-
-                        // If it's player's turn, send YOUR_TURN
-                        if (game->isPlayerTurn(client)) {
-                            game->notifyYourTurn(const_cast<Player*>(reconnectedPlayer));
-                        }
-
-                        // Notify opponent about reconnect
-                        opponent->client->queueMessage(Protocol::buildMessage({
-                            Protocol::CMD_PLAYER_RECONNECTED,
-                            reconnectedPlayer->client->getNickname()
-                        }));
-
-                        // Send GAME_START to opponent (they didn't get it when they reconnected because other player was disconnected)
-                        opponent->client->queueMessage(Protocol::buildMessage({
-                            Protocol::CMD_GAME_START,
-                            opponentRole,
-                            reconnectedPlayer->nickname
-                        }));
-
-                        // Send opponent's cards
-                        if (!opponent->hand.empty()) {
-                            std::vector<std::string> opponentCardsMsg = {
-                                Protocol::CMD_DEAL_CARDS,
-                                std::to_string(opponent->hand.size())
-                            };
-                            for (const Card& card : opponent->hand) {
-                                opponentCardsMsg.push_back(card.toString());
-                            }
-                            opponent->client->queueMessage(Protocol::buildMessage(opponentCardsMsg));
-                        }
-
-                        // If it's opponent's turn, send YOUR_TURN
-                        if (game->isPlayerTurn(opponent->client)) {
-                            game->notifyYourTurn(const_cast<Player*>(opponent));
+            // Get room and opponent info for the prompt
+            std::string opponentNickname = "";
+            auto roomIt = rooms.find(roomId);
+            if (roomIt != rooms.end()) {
+                Room* room = roomIt->second.get();
+                Game* game = room->getGame();
+                if (game) {
+                    // Find opponent by getting the reconnecting player first
+                    Player* reconnectingPlayer = game->getPlayerByNickname(nickname);
+                    if (reconnectingPlayer) {
+                        const Player* opponent = game->getOpponent(reconnectingPlayer->client);
+                        if (opponent) {
+                            opponentNickname = opponent->nickname;
                         }
                     }
                 }
-
-                LOG_INFO("Reconnected player - sent game state to both players");
             }
 
-            // Remove from disconnected players
-            disconnectedPlayers.erase(disconnectedIt);
+            // Send RECONNECT_QUERY message
+            // Format: RECONNECT_QUERY|roomId|opponentNickname
+            client->queueMessage(Protocol::buildMessage({
+                Protocol::CMD_RECONNECT_QUERY,
+                std::to_string(roomId),
+                opponentNickname
+            }));
 
-            // Log state for recovery
-            std::map<std::string, std::string> reconnectData = {
-                {"nickname", nickname},
-                {"roomId", std::to_string(info.roomId)}
-            };
-            LOG_STATE("PLAYER_RECONNECT", reconnectData);
-
+            LOG_INFO("Sent RECONNECT_QUERY to " + nickname + " for room " + std::to_string(roomId));
             return;
-        } else {
-            // Room doesn't exist anymore
-            LOG_WARNING("Room " + std::to_string(info.roomId) + " no longer exists for reconnect of " + nickname);
-            disconnectedPlayers.erase(disconnectedIt);
-            // Continue with normal login
         }
+    } else {
+        // Player NOT in disconnected list
+        if (isReconnectAttempt) {
+            // Session ID provided but player not in list (expired)
+            LOG_WARNING("Player " + nickname + " session expired");
+            client->queueMessage(Protocol::buildMessage({Protocol::CMD_ERROR, "Session expired"}));
+            return;
+        }
+
+        // Normal login (not a reconnect)
+        if (isNicknameTaken(nickname)) {
+            client->queueMessage(Protocol::buildMessage({Protocol::CMD_ERROR, "Nickname already in use"}));
+            return;
+        }
+
+        // Přihlášení úspěšné
+        client->setNickname(nickname);
+        client->setState(Protocol::LOBBY);
+        activeNicknames.insert(nickname);
+
+        client->queueMessage(Protocol::buildMessage({Protocol::CMD_OK, client->getSessionId()}));
+        LOG_INFO("Client " + client->getAddress() + " logged in as " + nickname);
+
+        // Log state for recovery
+        std::map<std::string, std::string> loginData = {
+            {"nickname", nickname},
+            {"sessionId", client->getSessionId()},
+            {"address", client->getAddress()}
+        };
+        LOG_STATE("PLAYER_LOGIN", loginData);
     }
-
-    // Normal login (not a reconnect)
-    if (isNicknameTaken(nickname)) {
-        client->queueMessage(Protocol::buildMessage({Protocol::CMD_ERROR, "Nickname already in use"}));
-        return;
-    }
-
-    // Přihlášení úspěšné
-    client->setNickname(nickname);
-    client->setState(Protocol::LOBBY);
-    activeNicknames.insert(nickname);
-
-    client->queueMessage(Protocol::buildMessage({Protocol::CMD_OK, client->getSessionId()}));
-    LOG_INFO("Client " + client->getAddress() + " logged in as " + nickname);
-
-    // Log state for recovery
-    std::map<std::string, std::string> loginData = {
-        {"nickname", nickname},
-        {"sessionId", client->getSessionId()},
-        {"address", client->getAddress()}
-    };
-    LOG_STATE("PLAYER_LOGIN", loginData);
 }
 
 /**
@@ -885,6 +955,267 @@ void Server::handleAckGameEnd(Client* client) {
  */
 void Server::handleAckGameState(Client* client) {
     LOG_DEBUG("ACK_GAME_STATE received from " + client->getNickname());
+}
+
+/**
+ * Zpracuje RECONNECT_ACCEPT - hráč souhlasí s reconnectem.
+ */
+void Server::handleReconnectAccept(Client* client) {
+    std::string nickname = client->getNickname();
+    LOG_INFO("Player " + nickname + " accepted reconnect");
+
+    // Find player in disconnectedPlayers
+    auto disconnectedIt = disconnectedPlayers.find(nickname);
+    if (disconnectedIt == disconnectedPlayers.end()) {
+        LOG_WARNING("RECONNECT_ACCEPT from " + nickname + " but not in disconnectedPlayers");
+        client->queueMessage(Protocol::buildMessage({Protocol::CMD_ERROR, "Reconnect failed"}));
+        return;
+    }
+
+    DisconnectedPlayerInfo& info = disconnectedIt->second;
+
+    // Restore session ID
+    client->setSessionId(info.sessionId);
+
+    // Find the room
+    auto roomIt = rooms.find(info.roomId);
+    if (roomIt == rooms.end()) {
+        LOG_WARNING("Room " + std::to_string(info.roomId) + " no longer exists for reconnect of " + nickname);
+        disconnectedPlayers.erase(disconnectedIt);
+        activeNicknames.erase(nickname);
+        client->queueMessage(Protocol::buildMessage({Protocol::CMD_ERROR, "Room no longer exists"}));
+        return;
+    }
+
+    Room* room = roomIt->second.get();
+
+    // Reconnect player to room
+    room->reconnectPlayer(client);
+
+    LOG_INFO("Player " + nickname + " returned to room " + std::to_string(info.roomId));
+
+    // Send OK with session ID
+    client->queueMessage(Protocol::buildMessage({Protocol::CMD_OK, client->getSessionId()}));
+
+    // Send game state to reconnected player
+    Game* game = room->getGame();
+    if (game) {
+        // Find the player by nickname and update their client pointer
+        Player* reconnectedPlayer = game->getPlayerByNickname(nickname);
+        if (reconnectedPlayer) {
+            reconnectedPlayer->client = client;
+            LOG_INFO("Updated client pointer for player " + nickname);
+        }
+
+        const Player* opponent = game->getOpponent(client);
+
+        if (reconnectedPlayer && opponent) {
+            std::string opponentNickname = opponent->nickname;
+            bool opponentIsDisconnected = (disconnectedPlayers.find(opponentNickname) != disconnectedPlayers.end());
+
+            if (opponentIsDisconnected) {
+                LOG_INFO("Player " + nickname + " reconnected, but opponent " + opponentNickname + " is still disconnected");
+                client->queueMessage(Protocol::buildMessage({
+                    Protocol::CMD_PLAYER_DISCONNECTED,
+                    opponentNickname
+                }));
+            } else {
+                LOG_INFO("Player " + nickname + " reconnected, opponent " + opponentNickname + " is connected");
+
+                std::string role = game->getPlayerRole(client);
+                std::string opponentRole = game->getPlayerRole(opponent->client);
+
+                // Send GAME_START to reconnected player
+                client->queueMessage(Protocol::buildMessage({
+                    Protocol::CMD_GAME_START,
+                    role,
+                    opponentNickname
+                }));
+
+                // Send GAME_STATE
+                game->notifyGameState();
+
+                // Send player's cards
+                if (!reconnectedPlayer->hand.empty()) {
+                    std::vector<std::string> dealCardsMsg = {
+                        Protocol::CMD_DEAL_CARDS,
+                        std::to_string(reconnectedPlayer->hand.size())
+                    };
+                    for (const Card& card : reconnectedPlayer->hand) {
+                        dealCardsMsg.push_back(card.toString());
+                    }
+                    client->queueMessage(Protocol::buildMessage(dealCardsMsg));
+                }
+
+                // If it's player's turn, send YOUR_TURN
+                if (game->isPlayerTurn(client)) {
+                    game->notifyYourTurn(const_cast<Player*>(reconnectedPlayer));
+                }
+
+                // Notify opponent about reconnect
+                opponent->client->queueMessage(Protocol::buildMessage({
+                    Protocol::CMD_PLAYER_RECONNECTED,
+                    reconnectedPlayer->client->getNickname()
+                }));
+
+                // Send GAME_START to opponent
+                opponent->client->queueMessage(Protocol::buildMessage({
+                    Protocol::CMD_GAME_START,
+                    opponentRole,
+                    reconnectedPlayer->nickname
+                }));
+
+                // Send opponent's cards
+                if (!opponent->hand.empty()) {
+                    std::vector<std::string> opponentCardsMsg = {
+                        Protocol::CMD_DEAL_CARDS,
+                        std::to_string(opponent->hand.size())
+                    };
+                    for (const Card& card : opponent->hand) {
+                        opponentCardsMsg.push_back(card.toString());
+                    }
+                    opponent->client->queueMessage(Protocol::buildMessage(opponentCardsMsg));
+                }
+
+                // If it's opponent's turn, send YOUR_TURN
+                if (game->isPlayerTurn(opponent->client)) {
+                    game->notifyYourTurn(const_cast<Player*>(opponent));
+                }
+            }
+        }
+
+        LOG_INFO("Reconnected player - sent game state to both players");
+    }
+
+    // Remove from disconnected players
+    disconnectedPlayers.erase(disconnectedIt);
+
+    // Log state for recovery
+    std::map<std::string, std::string> reconnectData = {
+        {"nickname", nickname},
+        {"roomId", std::to_string(info.roomId)}
+    };
+    LOG_STATE("PLAYER_RECONNECT", reconnectData);
+}
+
+/**
+ * Zpracuje RECONNECT_DECLINE - hráč odmítá reconnect, chce fresh login.
+ */
+void Server::handleReconnectDecline(Client* client) {
+    std::string nickname = client->getNickname();
+    LOG_INFO("Player " + nickname + " declined reconnect, allowing fresh login");
+
+    // Find player in disconnectedPlayers
+    auto disconnectedIt = disconnectedPlayers.find(nickname);
+    if (disconnectedIt == disconnectedPlayers.end()) {
+        LOG_WARNING("RECONNECT_DECLINE from " + nickname + " but not in disconnectedPlayers");
+        client->queueMessage(Protocol::buildMessage({Protocol::CMD_ERROR, "Already removed"}));
+        return;
+    }
+
+    DisconnectedPlayerInfo& info = disconnectedIt->second;
+    int oldRoomId = info.roomId;
+
+    // Remove from disconnected players
+    disconnectedPlayers.erase(disconnectedIt);
+
+    // Check room and reset it to WAITING state
+    auto roomIt = rooms.find(oldRoomId);
+    if (roomIt != rooms.end()) {
+        Room* room = roomIt->second.get();
+
+        // If room is empty (all players disconnected/declined), delete it
+        if (room->getPlayerCount() == 0) {
+            LOG_INFO("Deleting empty room " + std::to_string(oldRoomId) + " (player declined reconnect)");
+            rooms.erase(roomIt);
+        } else {
+            // Room has other player(s) - notify them and reset room to WAITING
+            Game* game = room->getGame();
+            if (game) {
+                // Notify remaining players that opponent declined reconnect
+                // Get the declining player to find opponent
+                Player* decliningPlayer = game->getPlayerByNickname(nickname);
+                if (decliningPlayer) {
+                    Player* opponent = game->getOpponent(decliningPlayer->client);
+                    if (opponent && opponent->client) {
+                        opponent->client->queueMessage(Protocol::buildMessage({
+                            Protocol::CMD_ERROR,
+                            "Opponent declined reconnect. Room reset to WAITING."
+                        }));
+                        // Return opponent back to IN_ROOM state
+                        opponent->client->setState(Protocol::IN_ROOM);
+                    }
+                }
+            }
+
+            // Reset room to WAITING state (deletes game, sets state to WAITING)
+            room->resetGame();
+            LOG_INFO("Room " + std::to_string(oldRoomId) + " reset to WAITING (player declined reconnect)");
+        }
+    }
+
+    // Now allow fresh login - send OK with new session ID
+    client->setState(Protocol::LOBBY);
+    activeNicknames.insert(nickname);
+
+    client->queueMessage(Protocol::buildMessage({Protocol::CMD_OK, client->getSessionId()}));
+    LOG_INFO("Client " + client->getAddress() + " fresh login as " + nickname + " after declining reconnect");
+
+    // Log state
+    std::map<std::string, std::string> loginData = {
+        {"nickname", nickname},
+        {"sessionId", client->getSessionId()},
+        {"address", client->getAddress()},
+        {"reconnectDeclined", "true"}
+    };
+    LOG_STATE("PLAYER_LOGIN", loginData);
+}
+
+/**
+ * Odstraní hráče z disconnectedPlayers, kteří překročili timeout.
+ */
+void Server::cleanupTimedOutDisconnectedPlayers() {
+    if (disconnectedPlayers.empty()) {
+        return;
+    }
+
+    time_t now = time(nullptr);
+    std::vector<std::string> toRemove;
+
+    for (const auto& pair : disconnectedPlayers) {
+        const std::string& nickname = pair.first;
+        const DisconnectedPlayerInfo& info = pair.second;
+
+        time_t duration = now - info.disconnectTime;
+
+        if (duration > Protocol::RECONNECT_TIMEOUT) {
+            toRemove.push_back(nickname);
+            LOG_INFO("Player " + nickname + " timed out (disconnected " +
+                     std::to_string(duration) + " seconds)");
+        }
+    }
+
+    // Remove expired players
+    for (const std::string& nickname : toRemove) {
+        auto it = disconnectedPlayers.find(nickname);
+        if (it != disconnectedPlayers.end()) {
+            int roomId = it->second.roomId;
+            disconnectedPlayers.erase(it);
+            activeNicknames.erase(nickname);
+
+            // Check if room should be deleted
+            auto roomIt = rooms.find(roomId);
+            if (roomIt != rooms.end()) {
+                Room* room = roomIt->second.get();
+                if (room->getPlayerCount() == 0 && room->getGame() != nullptr) {
+                    LOG_INFO("Deleting room " + std::to_string(roomId) + " (all players timed out)");
+                    rooms.erase(roomIt);
+                }
+            }
+
+            LOG_INFO("Removed timed out player " + nickname);
+        }
+    }
 }
 
 /**

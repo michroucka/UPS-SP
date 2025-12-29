@@ -250,4 +250,20 @@ public class ProtocolMessage {
     public static ProtocolMessage ackGameState() {
         return new ProtocolMessage("ACK_GAME_STATE");
     }
+
+    /**
+     * Creates a RECONNECT_ACCEPT message
+     * @return RECONNECT_ACCEPT message
+     */
+    public static ProtocolMessage reconnectAccept() {
+        return new ProtocolMessage("RECONNECT_ACCEPT");
+    }
+
+    /**
+     * Creates a RECONNECT_DECLINE message
+     * @return RECONNECT_DECLINE message
+     */
+    public static ProtocolMessage reconnectDecline() {
+        return new ProtocolMessage("RECONNECT_DECLINE");
+    }
 }

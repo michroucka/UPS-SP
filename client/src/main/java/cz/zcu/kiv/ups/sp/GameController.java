@@ -12,6 +12,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 
@@ -196,7 +197,115 @@ public class GameController {
                     Platform.runLater(() -> updateStatus("Logging in as " + nickname + "..."));
 
                     if (gameClient.login(nickname)) {
-                        debug("Login successful, starting message receiver");
+                        debug("Login successful");
+
+                        // Check if server sent RECONNECT_QUERY
+                        if (gameClient.hasPendingReconnectQuery()) {
+                            debug("Reconnect query detected - showing dialog to user");
+
+                            String opponentName = gameClient.getReconnectOpponentNickname();
+
+                            // Show dialog on UI thread and wait for user decision
+                            boolean[] userChoice = new boolean[1];
+                            CountDownLatch dialogLatch = new CountDownLatch(1);
+
+                            Platform.runLater(() -> {
+                                Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
+                                alert.setTitle("Reconnect to Game");
+                                alert.setHeaderText("You were disconnected from a game");
+                                alert.setContentText("You were playing against " + opponentName + ".\n\nDo you want to reconnect and continue the game?");
+
+                                ButtonType yesButton = new ButtonType("Yes", ButtonBar.ButtonData.YES);
+                                ButtonType noButton = new ButtonType("No", ButtonBar.ButtonData.NO);
+                                alert.getButtonTypes().setAll(yesButton, noButton);
+
+                                Optional<ButtonType> result = alert.showAndWait();
+                                userChoice[0] = result.isPresent() && result.get() == yesButton;
+                                dialogLatch.countDown();
+                            });
+
+                            // Wait for user decision
+                            try {
+                                dialogLatch.await();
+                            } catch (InterruptedException e) {
+                                debug("Interrupted while waiting for user decision");
+                                return;
+                            }
+
+                            boolean reconnectAccepted = userChoice[0];
+                            debug("User chose to " + (reconnectAccepted ? "accept" : "decline") + " reconnect");
+
+                            boolean reconnectResult;
+                            if (reconnectAccepted) {
+                                reconnectResult = gameClient.acceptReconnect();
+                            } else {
+                                reconnectResult = gameClient.declineReconnect();
+                            }
+
+                            if (!reconnectResult) {
+                                debug("Reconnect response failed");
+                                Platform.runLater(() -> {
+                                    showError("Failed to process reconnect response");
+                                    updateStatus("Reconnect failed");
+                                    gameClient = null;
+                                });
+                                return;
+                            }
+
+                            // Continue based on user choice
+                            if (reconnectAccepted) {
+                                debug("Reconnect accepted - will restore game state");
+
+                                // Start heartbeat and message receiver
+                                gameClient.getNetworkClient().startHeartbeat(() -> {
+                                    Platform.runLater(() -> {
+                                        debug("Heartbeat detected server unavailability");
+                                        handleServerUnavailable();
+                                    });
+                                });
+
+                                startMessageReceiver();
+
+                                Platform.runLater(() -> {
+                                    connectionStatus.setText("Connected");
+                                    connectionStatus.setStyle("-fx-text-fill: #4CAF50; -fx-font-weight: bold;");
+                                    connectButton.setDisable(true);
+                                    disconnectButton.setDisable(false);
+                                    serverHostField.setDisable(true);
+                                    serverPortField.setDisable(true);
+                                    nicknameField.setDisable(true);
+                                    updateStatus("Reconnecting to game...");
+
+                                    // Show game panel
+                                    lobbyPanel.setVisible(false);
+                                    gamePanel.setVisible(true);
+                                });
+
+                                // Start message processor to handle incoming game state
+                                startMessageProcessor();
+
+                                // Wait for game state messages (GAME_START, GAME_STATE, etc.)
+                                Platform.runLater(() -> {
+                                    waitForGameStart();  // This will process GAME_START and restore state
+                                });
+
+                                return;  // Exit early - reconnect flow complete
+                            } else {
+                                debug("Reconnect declined - starting fresh in lobby");
+                                // Fall through to normal login flow below
+                            }
+                        }
+
+                        debug("Starting message receiver");
+
+                        // Start heartbeat to detect server unavailability
+                        gameClient.getNetworkClient().startHeartbeat(() -> {
+                            Platform.runLater(() -> {
+                                debug("Heartbeat detected server unavailability");
+                                handleServerUnavailable();
+                            });
+                        });
+
                         // Start message receiver immediately after login!
                         startMessageReceiver();
 
@@ -360,6 +469,7 @@ public class GameController {
             stopMessageReceiver();
             if (gameClient != null) {
                 debug("Disconnecting from server");
+                gameClient.getNetworkClient().stopHeartbeat();
                 gameClient.disconnect();
                 gameClient = null;
             }
@@ -380,6 +490,34 @@ public class GameController {
                 updateStatus("Disconnected");
             });
         }).start();
+    }
+
+    /**
+     * Handles server unavailability (network outage, server down)
+     */
+    private void handleServerUnavailable() {
+        if (isReconnecting || manualDisconnect) {
+            return;
+        }
+
+        debug("Server unavailable - initiating reconnect");
+
+        // Stop message processing
+        stopMessageReceiver();
+
+        // Update UI - viditelná informace
+        Platform.runLater(() -> {
+            connectionStatus.setText("Server Unavailable");
+            connectionStatus.setStyle("-fx-text-fill: #f44336; -fx-font-weight: bold;");
+            updateStatus("Connection to server lost. Attempting to reconnect...");
+
+            // Show alert
+            showAlert("Connection Lost",
+                      "Lost connection to server. Attempting automatic reconnect...");
+        });
+
+        // Attempt reconnect
+        attemptReconnect();
     }
 
     @FXML
@@ -936,6 +1074,13 @@ public class GameController {
 
                     debug("Received message: " + msg.getCommand());
 
+                    // Ignore PONG messages - they are sent by server in response to heartbeat PING
+                    // but heartbeat no longer waits for them (it only checks if send() succeeds)
+                    if ("PONG".equals(msg.getCommand())) {
+                        debug("PONG received (heartbeat response) - ignoring");
+                        continue;
+                    }
+
                     // Route message to appropriate queue based on type
                     if (isAsyncMessage(msg)) {
                         if (!asyncMessageQueue.offer(msg)) {
@@ -1217,9 +1362,12 @@ public class GameController {
                 // Create new client and attempt to reconnect
                 GameClient newClient = new GameClient(lastServerHost, lastServerPort);
 
+                // Try reconnect with session ID
+                String sessionIdToRestore = (gameClient != null) ? gameClient.getSessionId() : null;
+
                 if (newClient.connect()) {
-                    debug("attemptReconnect: connected, attempting login as " + lastNickname);
-                    if (newClient.login(lastNickname)) {
+                    debug("attemptReconnect: connected, attempting login as " + lastNickname + " with session ID");
+                    if (newClient.login(lastNickname, sessionIdToRestore)) {
                         debug("attemptReconnect: login successful!");
                         reconnected = true;
 
@@ -1237,6 +1385,15 @@ public class GameController {
                         // Restart message receiver
                         debug("attemptReconnect: restarting message receiver");
                         startMessageReceiver();
+
+                        // Restart heartbeat to continue monitoring server availability
+                        debug("attemptReconnect: restarting heartbeat");
+                        gameClient.getNetworkClient().startHeartbeat(() -> {
+                            Platform.runLater(() -> {
+                                debug("Heartbeat detected server unavailability after reconnect");
+                                handleServerUnavailable();
+                            });
+                        });
 
                         // Wait for server to restore state (reconnect detection)
                         debug("attemptReconnect: waiting for server to restore state");

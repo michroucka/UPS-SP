@@ -14,6 +14,9 @@ namespace Protocol {
     const int MAX_MESSAGE_SIZE = 4096;
     const int MAX_INVALID_MESSAGES = 3;
 
+    // Timeouty (v sekundách)
+    const int RECONNECT_TIMEOUT = 300;  // 5 minut
+
     // Příkazy klient -> server
     const std::string CMD_LOGIN = "LOGIN";
     const std::string CMD_PING = "PING";
@@ -45,6 +48,11 @@ namespace Protocol {
     const std::string CMD_GAME_END = "GAME_END";
     const std::string CMD_PLAYER_DISCONNECTED = "PLAYER_DISCONNECTED";
     const std::string CMD_PLAYER_RECONNECTED = "PLAYER_RECONNECTED";
+
+    // Reconnect prompt zprávy
+    const std::string CMD_RECONNECT_QUERY = "RECONNECT_QUERY";      // server -> klient
+    const std::string CMD_RECONNECT_ACCEPT = "RECONNECT_ACCEPT";    // klient -> server
+    const std::string CMD_RECONNECT_DECLINE = "RECONNECT_DECLINE";  // klient -> server
 
     // ACK zprávy (klient -> server)
     const std::string CMD_ACK_DEAL_CARDS = "ACK_DEAL_CARDS";

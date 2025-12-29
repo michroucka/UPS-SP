@@ -40,6 +40,7 @@ public:
     void startGame();
     Game* getGame() { return game; }
     void checkAndHandleGameEnd();
+    void resetGame();  // Delete game and reset to WAITING state
 
     std::string getStateString() const {
         switch (state) {
