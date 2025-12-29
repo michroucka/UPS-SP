@@ -650,13 +650,67 @@ public class GameController {
     @FXML
     private void handleHit() {
         debug("handleHit() called");
-        if (gameClient != null) {
-            debug("Sending HIT action");
-            gameClient.hit();
-            hitButton.setDisable(true);
-            standButton.setDisable(true);
-            updateStatus("Requested card...");
-        }
+        if (gameClient == null) return;
+
+        // Disable buttons immediately
+        hitButton.setDisable(true);
+        standButton.setDisable(true);
+        updateStatus("Requesting card...");
+
+        new Thread(() -> {
+            debug("Hit thread started");
+            try {
+                // Send HIT message
+                ProtocolMessage hitMsg = ProtocolMessage.hit();
+                debug("Sending HIT message");
+                if (!gameClient.sendMessage(hitMsg)) {
+                    debug("Failed to send HIT message");
+                    Platform.runLater(() -> {
+                        showError("Failed to send hit request");
+                        updateStatus("Failed to hit");
+                        hitButton.setDisable(false);
+                        standButton.setDisable(false);
+                    });
+                    return;
+                }
+
+                // Wait for OK response from queue
+                debug("Waiting for OK response");
+                ProtocolMessage response = waitForResponse("OK", 5);
+
+                if (response != null && response.getCommand().equals("OK")) {
+                    debug("HIT confirmed by server");
+                    Platform.runLater(() -> {
+                        updateStatus("Card incoming...");
+                    });
+                } else if (response != null && response.getCommand().equals("ERROR")) {
+                    debug("HIT rejected: " + response.getErrorMessage());
+                    Platform.runLater(() -> {
+                        showError("Server rejected HIT: " + response.getErrorMessage());
+                        updateStatus("Hit rejected");
+                        hitButton.setDisable(false);
+                        standButton.setDisable(false);
+                    });
+                } else {
+                    debug("Hit timeout - server did not respond");
+                    Platform.runLater(() -> {
+                        showError("Server did not respond to hit request");
+                        updateStatus("Hit failed");
+                        hitButton.setDisable(false);
+                        standButton.setDisable(false);
+                    });
+                }
+            } catch (Exception e) {
+                debug("Error during hit: " + e.getMessage());
+                e.printStackTrace();
+                Platform.runLater(() -> {
+                    showError("Error during hit: " + e.getMessage());
+                    updateStatus("Hit error");
+                    hitButton.setDisable(false);
+                    standButton.setDisable(false);
+                });
+            }
+        }).start();
     }
 
     @FXML
@@ -1451,6 +1505,16 @@ public class GameController {
                 case "GAME_STATE":
                     debug("GAME_STATE received, updating game info");
                     updateGameInfo();
+
+                    // Send ACK
+                    new Thread(() -> {
+                        ProtocolMessage ackMsg = ProtocolMessage.ackGameState();
+                        if (!gameClient.sendMessage(ackMsg)) {
+                            debug("Failed to send ACK_GAME_STATE");
+                        } else {
+                            debug("ACK_GAME_STATE sent");
+                        }
+                    }).start();
                     break;
 
                 case "DEAL_CARDS":
@@ -1498,6 +1562,16 @@ public class GameController {
                     waitingArea.setVisible(true);
                     debug("DEAL_CARDS - waitingArea set to VISIBLE (will be hidden on YOUR_TURN)");
                     updateStatus("Cards dealt!");
+
+                    // Send ACK
+                    new Thread(() -> {
+                        ProtocolMessage ackMsg = ProtocolMessage.ackDealCards();
+                        if (!gameClient.sendMessage(ackMsg)) {
+                            debug("Failed to send ACK_DEAL_CARDS");
+                        } else {
+                            debug("ACK_DEAL_CARDS sent");
+                        }
+                    }).start();
                     break;
 
                 case "CARD":
@@ -1599,6 +1673,10 @@ public class GameController {
 
         debug("ROUND_END: winner=" + winner + ", yourTotal=" + yourTotal + ", opponentTotal=" + opponentTotal);
 
+        // Uložit hodnoty do GameClient (ze serveru)
+        gameClient.setPlayerHandValue(yourTotalInt);
+        gameClient.setOpponentHandValue(opponentTotalInt);
+
         // Parse opponent cards if available (parameter 4)
         if (msg.getParameterCount() >= 5) {
             String opponentCardsStr = msg.getParameter(4);
@@ -1636,6 +1714,16 @@ public class GameController {
 
         // Hide waiting area for next round
         waitingArea.setVisible(false);
+
+        // Send ACK
+        new Thread(() -> {
+            ProtocolMessage ackMsg = ProtocolMessage.ackRoundEnd();
+            if (!gameClient.sendMessage(ackMsg)) {
+                debug("Failed to send ACK_ROUND_END");
+            } else {
+                debug("ACK_ROUND_END sent");
+            }
+        }).start();
 
         // Result area will be hidden when DEAL_CARDS arrives (after server delay)
     }
@@ -1677,6 +1765,16 @@ public class GameController {
         waitingArea.setVisible(false);
 
         updateStatus("Game ended. Returning to lobby...");
+
+        // Send ACK
+        new Thread(() -> {
+            ProtocolMessage ackMsg = ProtocolMessage.ackGameEnd();
+            if (!gameClient.sendMessage(ackMsg)) {
+                debug("Failed to send ACK_GAME_END");
+            } else {
+                debug("ACK_GAME_END sent");
+            }
+        }).start();
 
         // GAME_END will be handled by message processor for delay and cleanup
     }
@@ -1739,7 +1837,7 @@ public class GameController {
             yourCardsBox.getChildren().add(cardView);
         }
 
-        // Update hand value
+        // Update hand value (calculated from cards)
         int handValue = calculateHandValue(cards);
         handValueLabel.setText("(Value: " + handValue + ")");
     }
@@ -1813,7 +1911,7 @@ public class GameController {
             opponentCardsBox.getChildren().add(cardView);
         }
 
-        // Calculate and show opponent hand value
+        // Show opponent hand value (calculated from revealed cards)
         int handValue = calculateHandValue(cards);
         opponentHandValueLabel.setText("(Value: " + handValue + ")");
     }
@@ -1894,7 +1992,6 @@ public class GameController {
                 return 0;
         }
     }
-
 
     /**
      * Resets all game UI elements to initial state

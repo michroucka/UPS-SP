@@ -155,6 +155,9 @@ void Game::playerHit(Client* client) {
         return;
     }
 
+    // Poslat OK potvrzení (stejně jako u playerStand)
+    client->queueMessage(Protocol::buildMessage({ Protocol::CMD_OK }));
+
     // Přidat kartu
     Card card = deck.draw();
     player->hand.push_back(card);

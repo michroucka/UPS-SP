@@ -43,6 +43,10 @@ private:
     void handleLeaveRoom(Client* client);
     void handleHit(Client* client);
     void handleStand(Client* client);
+    void handleAckDealCards(Client* client);
+    void handleAckRoundEnd(Client* client);
+    void handleAckGameEnd(Client* client);
+    void handleAckGameState(Client* client);
 
     // Validace
     bool validateMessage(Client* client, const std::vector<std::string>& parts, size_t expectedSize);

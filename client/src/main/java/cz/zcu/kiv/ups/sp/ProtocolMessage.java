@@ -218,4 +218,36 @@ public class ProtocolMessage {
     public static ProtocolMessage reconnect(String sessionId) {
         return new ProtocolMessage("RECONNECT", sessionId);
     }
+
+    /**
+     * Creates an ACK_DEAL_CARDS message
+     * @return ACK_DEAL_CARDS message
+     */
+    public static ProtocolMessage ackDealCards() {
+        return new ProtocolMessage("ACK_DEAL_CARDS");
+    }
+
+    /**
+     * Creates an ACK_ROUND_END message
+     * @return ACK_ROUND_END message
+     */
+    public static ProtocolMessage ackRoundEnd() {
+        return new ProtocolMessage("ACK_ROUND_END");
+    }
+
+    /**
+     * Creates an ACK_GAME_END message
+     * @return ACK_GAME_END message
+     */
+    public static ProtocolMessage ackGameEnd() {
+        return new ProtocolMessage("ACK_GAME_END");
+    }
+
+    /**
+     * Creates an ACK_GAME_STATE message
+     * @return ACK_GAME_STATE message
+     */
+    public static ProtocolMessage ackGameState() {
+        return new ProtocolMessage("ACK_GAME_STATE");
+    }
 }

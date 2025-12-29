@@ -368,6 +368,14 @@ void Server::processMessage(Client* client, const std::string& message) {
         handleHit(client);
     } else if (command == Protocol::CMD_STAND) {
         handleStand(client);
+    } else if (command == Protocol::CMD_ACK_DEAL_CARDS) {
+        handleAckDealCards(client);
+    } else if (command == Protocol::CMD_ACK_ROUND_END) {
+        handleAckRoundEnd(client);
+    } else if (command == Protocol::CMD_ACK_GAME_END) {
+        handleAckGameEnd(client);
+    } else if (command == Protocol::CMD_ACK_GAME_STATE) {
+        handleAckGameState(client);
     } else {
         handleInvalidMessage(client, "Invalid command: " + command);
     }
@@ -849,6 +857,34 @@ Room* Server::getRoomForClient(Client* client) {
     }
 
     return it->second.get();
+}
+
+/**
+ * Zpracuje ACK_DEAL_CARDS zprávu.
+ */
+void Server::handleAckDealCards(Client* client) {
+    LOG_DEBUG("ACK_DEAL_CARDS received from " + client->getNickname());
+}
+
+/**
+ * Zpracuje ACK_ROUND_END zprávu.
+ */
+void Server::handleAckRoundEnd(Client* client) {
+    LOG_DEBUG("ACK_ROUND_END received from " + client->getNickname());
+}
+
+/**
+ * Zpracuje ACK_GAME_END zprávu.
+ */
+void Server::handleAckGameEnd(Client* client) {
+    LOG_DEBUG("ACK_GAME_END received from " + client->getNickname());
+}
+
+/**
+ * Zpracuje ACK_GAME_STATE zprávu.
+ */
+void Server::handleAckGameState(Client* client) {
+    LOG_DEBUG("ACK_GAME_STATE received from " + client->getNickname());
 }
 
 /**

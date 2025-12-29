@@ -46,6 +46,12 @@ namespace Protocol {
     const std::string CMD_PLAYER_DISCONNECTED = "PLAYER_DISCONNECTED";
     const std::string CMD_PLAYER_RECONNECTED = "PLAYER_RECONNECTED";
 
+    // ACK zprávy (klient -> server)
+    const std::string CMD_ACK_DEAL_CARDS = "ACK_DEAL_CARDS";
+    const std::string CMD_ACK_ROUND_END = "ACK_ROUND_END";
+    const std::string CMD_ACK_GAME_END = "ACK_GAME_END";
+    const std::string CMD_ACK_GAME_STATE = "ACK_GAME_STATE";
+
     // Stavy klienta
     enum ClientState {
         CONNECTED,

@@ -17,6 +17,7 @@ Plzeň_174842_4_1.html
 mereni.csv
 stanice.csv
 .claude/
+intcptor_config.cfg
 
 # User-specific files (MonoDevelop/Xamarin Studio)
 *.userprefs

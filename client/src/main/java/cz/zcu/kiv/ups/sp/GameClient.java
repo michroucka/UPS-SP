@@ -21,6 +21,8 @@ public class GameClient {
     private int yourScore;
     private int opponentScore;
     private int currentRound;
+    private int playerHandValue;      // Hodnota hráčovy ruky (ze serveru)
+    private int opponentHandValue;    // Hodnota soupeřovy ruky (ze serveru)
 
     /**
      * Client states
@@ -410,6 +412,22 @@ public class GameClient {
         return currentRound;
     }
 
+    public int getPlayerHandValue() {
+        return playerHandValue;
+    }
+
+    public void setPlayerHandValue(int value) {
+        this.playerHandValue = value;
+    }
+
+    public int getOpponentHandValue() {
+        return opponentHandValue;
+    }
+
+    public void setOpponentHandValue(int value) {
+        this.opponentHandValue = value;
+    }
+
     public String getCurrentRoomId() {
         return currentRoomId;
     }
@@ -445,5 +463,7 @@ public class GameClient {
         this.opponentScore = 0;
         this.currentRound = 0;
         this.currentRoomId = null;
+        this.playerHandValue = 0;
+        this.opponentHandValue = 0;
     }
 }
