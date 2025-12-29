@@ -19,8 +19,8 @@ public class NetworkClient {
     // Heartbeat mechanism for detecting server unavailability
     private volatile boolean heartbeatRunning = false;
     private Thread heartbeatThread;
-    private static final int HEARTBEAT_INTERVAL_MS = 10000;  // 10 seconds
-    private static final int HEARTBEAT_TIMEOUT_MS = 5000;     // 5 seconds timeout
+    private static final int HEARTBEAT_INTERVAL_MS = 5000;   // 5 seconds
+    private static final int HEARTBEAT_TIMEOUT_MS = 3000;    // 3 seconds timeout
 
     /**
      * Creates a new network client

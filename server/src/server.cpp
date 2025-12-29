@@ -4,7 +4,6 @@
 #include <sys/socket.h>
 #include <sys/select.h>
 #include <netinet/in.h>
-#include <netinet/tcp.h>
 #include <arpa/inet.h>
 #include <unistd.h>
 #include <fcntl.h>
@@ -199,34 +198,6 @@ void Server::acceptNewClient() {
         LOG_ERROR("Error while accept(): " + std::string(strerror(errno)));
         return;
     }
-
-    // Enable TCP keepalive to detect dead connections quickly
-    int keepalive = 1;
-    int keepidle = 10;    // Start sending keepalive probes after 10 seconds of inactivity
-    int keepintvl = 5;    // Send probes every 5 seconds
-    int keepcnt = 2;      // Declare connection dead after 2 failed probes
-
-    if (setsockopt(clientSocket, SOL_SOCKET, SO_KEEPALIVE, &keepalive, sizeof(keepalive)) < 0) {
-        LOG_WARNING("Failed to set SO_KEEPALIVE: " + std::string(strerror(errno)));
-    }
-
-    #ifdef TCP_KEEPIDLE
-    if (setsockopt(clientSocket, IPPROTO_TCP, TCP_KEEPIDLE, &keepidle, sizeof(keepidle)) < 0) {
-        LOG_WARNING("Failed to set TCP_KEEPIDLE: " + std::string(strerror(errno)));
-    }
-    #endif
-
-    #ifdef TCP_KEEPINTVL
-    if (setsockopt(clientSocket, IPPROTO_TCP, TCP_KEEPINTVL, &keepintvl, sizeof(keepintvl)) < 0) {
-        LOG_WARNING("Failed to set TCP_KEEPINTVL: " + std::string(strerror(errno)));
-    }
-    #endif
-
-    #ifdef TCP_KEEPCNT
-    if (setsockopt(clientSocket, IPPROTO_TCP, TCP_KEEPCNT, &keepcnt, sizeof(keepcnt)) < 0) {
-        LOG_WARNING("Failed to set TCP_KEEPCNT: " + std::string(strerror(errno)));
-    }
-    #endif
 
     // Kontrola limitu klientů
     if (clients.size() >= static_cast<size_t>(MAX_CLIENTS)) {

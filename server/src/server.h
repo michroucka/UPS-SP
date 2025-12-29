@@ -84,7 +84,7 @@ private:
 
     // Limity
     const int MAX_CLIENTS;
-    const int CLIENT_TIMEOUT = 300;
+    const int CLIENT_TIMEOUT = 10;  // 10 seconds (client sends PING every 5s)
     const int MAX_ROOMS;
 };
 
