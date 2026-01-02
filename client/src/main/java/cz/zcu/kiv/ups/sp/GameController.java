@@ -1169,8 +1169,6 @@ public class GameController {
         }
 
         isReconnecting = true;
-        showAlert("Lost connection to server",
-                "Connection to the server has been lost. The application will now try to reconnect automatically.");
 
         new Thread(() -> {
             int attempts = 0;
