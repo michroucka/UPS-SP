@@ -1,5 +1,7 @@
 package cz.zcu.kiv.ups.sp;
 
+import cz.zcu.kiv.ups.sp.Logger;
+
 /**
  * Represents a protocol message according to the game protocol.
  * Format: COMMAND|param1|param2|...
@@ -34,7 +36,7 @@ public class ProtocolMessage {
 
         // VALIDATION: Check message size to prevent buffer overflow
         if (message.length() > MAX_MESSAGE_SIZE) {
-            System.err.println("Message too large: " + message.length() + " bytes (max " + MAX_MESSAGE_SIZE + ")");
+            Logger.error("Message too large: " + message.length() + " bytes (max " + MAX_MESSAGE_SIZE + ")");
             return null;
         }
 
@@ -45,7 +47,7 @@ public class ProtocolMessage {
 
         // VALIDATION: Check parameter count
         if (parts.length > MAX_PARAMETERS + 1) {  // +1 for command
-            System.err.println("Too many parameters: " + (parts.length - 1) + " (max " + MAX_PARAMETERS + ")");
+            Logger.error("Too many parameters: " + (parts.length - 1) + " (max " + MAX_PARAMETERS + ")");
             return null;
         }
 

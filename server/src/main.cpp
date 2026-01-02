@@ -82,7 +82,6 @@ int main(int argc, char* argv[]) {
 
     // Nastavení loggeru
     Logger::getInstance().setLogFile("server.log");
-    Logger::getInstance().setStateLogFile("server_state.log");
     Logger::getInstance().setConsoleOutput(true);
 
     LOG_INFO("=== Oko Bere Server ===");

@@ -18,8 +18,4 @@ public class HelloApplication extends Application {
         stage.setMinHeight(600);
         stage.show();
     }
-
-    public static void main(String[] args) {
-        launch();
-    }
 }

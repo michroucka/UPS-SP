@@ -3,6 +3,7 @@ package cz.zcu.kiv.ups.sp;
 import javafx.scene.image.Image;
 import java.util.HashMap;
 import java.util.Map;
+import cz.zcu.kiv.ups.sp.Logger;
 
 /**
  * Loads card images from resources
@@ -33,7 +34,7 @@ public class CardImageLoader {
             imageCache.put(cardName, image);
             return image;
         } catch (Exception e) {
-            System.err.println("Failed to load card image: " + imagePath);
+            Logger.error("Failed to load card image: " + imagePath);
             return getBackImage();
         }
     }
@@ -48,7 +49,7 @@ public class CardImageLoader {
             try {
                 backImage = new Image(CardImageLoader.class.getResourceAsStream(imagePath));
             } catch (Exception e) {
-                System.err.println("Failed to load card back image: " + imagePath);
+                Logger.error("Failed to load card back image: " + imagePath);
             }
         }
         return backImage;

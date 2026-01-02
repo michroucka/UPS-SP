@@ -4,6 +4,7 @@ import java.io.*;
 import java.net.Socket;
 import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
+import cz.zcu.kiv.ups.sp.Logger;
 
 /**
  * Handles TCP connection to the game server.
@@ -53,7 +54,7 @@ public class NetworkClient {
             lastMessageReceivedTime = System.currentTimeMillis();  // Initialize timestamp
             return true;
         } catch (IOException e) {
-            System.err.println("Failed to connect to server: " + e.getMessage());
+            Logger.error("Failed to connect to server: " + e.getMessage());
             connected = false;
             return false;
         }
@@ -66,7 +67,7 @@ public class NetworkClient {
      */
     public boolean send(String message) {
         if (!connected || writer == null) {
-            System.err.println("Not connected to server");
+            Logger.error("Not connected to server");
             return false;
         }
 
@@ -75,7 +76,7 @@ public class NetworkClient {
             writer.flush();
             return true;
         } catch (Exception e) {
-            System.err.println("Failed to send message: " + e.getMessage());
+            Logger.error("Failed to send message: " + e.getMessage());
             connected = false;
             return false;
         }
@@ -93,7 +94,7 @@ public class NetworkClient {
         try {
             String line = reader.readLine();
             if (line == null) {
-                System.err.println("Server closed connection");
+                Logger.error("Server closed connection");
                 connected = false;
                 return null;
             }
@@ -104,7 +105,7 @@ public class NetworkClient {
             // Timeout is normal - just return null
             return null;
         } catch (IOException e) {
-            System.err.println("Network error: " + e.getMessage());
+            Logger.error("Network error: " + e.getMessage());
             connected = false;
             return null;
         }
@@ -126,7 +127,7 @@ public class NetworkClient {
             }
             connected = false;
         } catch (IOException e) {
-            System.err.println("Error closing connection: " + e.getMessage());
+            Logger.error("Error closing connection: " + e.getMessage());
         }
     }
 
@@ -155,8 +156,8 @@ public class NetworkClient {
 
                     if (timeSinceLastMessage > HEARTBEAT_TIMEOUT_MS) {
                         // No message received for too long - connection is dead
-                        System.err.println("Heartbeat: No message received for " + timeSinceLastMessage + "ms (timeout: " + HEARTBEAT_TIMEOUT_MS + "ms)");
-                        System.err.println("Heartbeat: Connection lost - triggering reconnect");
+                        Logger.error("Heartbeat: No message received for " + timeSinceLastMessage + "ms (timeout: " + HEARTBEAT_TIMEOUT_MS + "ms)");
+                        Logger.error("Heartbeat: Connection lost - triggering reconnect");
                         onConnectionLost.run();
                         break;
                     }
@@ -181,6 +182,14 @@ public class NetworkClient {
         }
     }
 
+    public String getServerHost() {
+        return serverHost;
+    }
+
+    public int getServerPort() {
+        return serverPort;
+    }
+    
     /**
      * Checks if client is connected to server
      * @return true if connected

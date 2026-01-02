@@ -2,6 +2,7 @@ package cz.zcu.kiv.ups.sp;
 
 import java.util.ArrayList;
 import java.util.List;
+import cz.zcu.kiv.ups.sp.Logger;
 
 /**
  * Game client that handles communication with the game server
@@ -58,10 +59,13 @@ public class GameClient {
      * @return true if successful
      */
     public boolean connect() {
+        Logger.info("Connecting to server at " + networkClient.getServerHost() + ":" + networkClient.getServerPort());
         if (networkClient.connect()) {
-            state = ClientState.CONNECTED;
+            setState(ClientState.CONNECTED);
+            Logger.info("Successfully connected to server.");
             return true;
         }
+        Logger.warning("Failed to connect to server.");
         return false;
     }
 
@@ -82,35 +86,40 @@ public class GameClient {
      */
     public boolean login(String nickname, String sessionId) {
         if (state != ClientState.CONNECTED) {
+            Logger.warning("Cannot login, client not connected.");
             return false;
         }
 
         ProtocolMessage loginMsg;
         if (sessionId != null && !sessionId.isEmpty()) {
             // Reconnect - include session ID
+            Logger.info("Attempting to reconnect with nickname: " + nickname + " and session ID: " + sessionId);
             loginMsg = new ProtocolMessage("LOGIN", nickname, sessionId);
-            System.out.println("Reconnect attempt with session ID: " + sessionId);
         } else {
             // New login
+            Logger.info("Attempting to login with nickname: " + nickname);
             loginMsg = ProtocolMessage.login(nickname);
         }
 
         if (!networkClient.send(loginMsg.toString())) {
+            Logger.error("Failed to send login message.");
             return false;
         }
 
         String response = networkClient.receive();
         if (response == null) {
+            Logger.error("No response from server during login.");
             return false;
         }
 
         ProtocolMessage msg = ProtocolMessage.parse(response);
         if (msg == null) {
+            Logger.error("Failed to parse server response during login.");
             return false;
         }
 
         if (msg.isError()) {
-            System.err.println("Login failed: " + msg.getErrorMessage());
+            Logger.error("Login failed: " + msg.getErrorMessage());
 
             // Clear session ID if expired/invalid
             String errorMsg = msg.getErrorMessage();
@@ -123,169 +132,27 @@ public class GameClient {
         if ("RECONNECT_QUERY".equals(msg.getCommand())) {
             // Server is asking if we want to reconnect to an ongoing game
             if (msg.getParameterCount() >= 2) {
+                Logger.info("Received reconnect query for room: " + msg.getParameter(0));
                 this.hasPendingReconnectQuery = true;
                 this.reconnectRoomId = msg.getParameter(0);
                 this.reconnectOpponentNickname = msg.getParameter(1);
                 this.nickname = nickname;  // Store nickname for later
-                System.out.println("Reconnect query received - room: " + reconnectRoomId + ", opponent: " + reconnectOpponentNickname);
                 return true;  // Return true - caller should check hasPendingReconnectQuery()
             }
+            Logger.warning("Received invalid RECONNECT_QUERY with " + msg.getParameterCount() + " parameters.");
             return false;
         }
 
         if ("OK".equals(msg.getCommand()) && msg.getParameterCount() > 0) {
             this.sessionId = msg.getParameter(0);
             this.nickname = nickname;
-            this.state = ClientState.LOBBY;
+            setState(ClientState.LOBBY);
             this.hasPendingReconnectQuery = false;  // Clear any pending query
+            Logger.info("Login successful. Session ID: " + this.sessionId);
             return true;
         }
 
-        return false;
-    }
-
-    /**
-     * Lists available rooms
-     * @return list of room info strings
-     * @deprecated Use queue pattern from GameController instead
-     */
-    @Deprecated
-    public List<String> listRooms() {
-        if (state != ClientState.LOBBY) {
-            return null;
-        }
-
-        if (!networkClient.send(ProtocolMessage.roomList().toString())) {
-            return null;
-        }
-
-        String response = networkClient.receive();
-        if (response == null) {
-            return null;
-        }
-
-        ProtocolMessage msg = ProtocolMessage.parse(response);
-        if (msg == null || !"ROOMS".equals(msg.getCommand())) {
-            return null;
-        }
-
-        int roomCount = 0;
-        try {
-            roomCount = Integer.parseInt(msg.getParameter(0));
-        } catch (NumberFormatException e) {
-            return null;
-        }
-
-        List<String> rooms = new ArrayList<>();
-        for (int i = 0; i < roomCount; i++) {
-            response = networkClient.receive();
-            if (response != null) {
-                rooms.add(response);
-            }
-        }
-
-        return rooms;
-    }
-
-    /**
-     * Creates a new room
-     * @param roomName room name
-     * @return room ID or null if failed
-     */
-    /**
-     * @deprecated Use queue pattern from GameController instead
-     */
-    @Deprecated
-    public String createRoom(String roomName) {
-        if (state != ClientState.LOBBY) {
-            return null;
-        }
-
-        if (!networkClient.send(ProtocolMessage.createRoom(roomName).toString())) {
-            return null;
-        }
-
-        String response = networkClient.receive();
-        if (response == null) {
-            return null;
-        }
-
-        ProtocolMessage msg = ProtocolMessage.parse(response);
-        if (msg == null || msg.isError()) {
-            return null;
-        }
-
-        if ("ROOM_CREATED".equals(msg.getCommand()) && msg.getParameterCount() > 0) {
-            currentRoomId = msg.getParameter(0);
-            state = ClientState.IN_ROOM;
-            return currentRoomId;
-        }
-
-        return null;
-    }
-
-    /**
-     * Joins an existing room
-     * @param roomId room ID
-     * @return true if successful
-     */
-    /**
-     * @deprecated Use queue pattern from GameController instead
-     */
-    @Deprecated
-    public boolean joinRoom(String roomId) {
-        if (state != ClientState.LOBBY) {
-            return false;
-        }
-
-        if (!networkClient.send(ProtocolMessage.joinRoom(roomId).toString())) {
-            return false;
-        }
-
-        String response = networkClient.receive();
-        if (response == null) {
-            return false;
-        }
-
-        ProtocolMessage msg = ProtocolMessage.parse(response);
-        if (msg == null || msg.isError()) {
-            return false;
-        }
-
-        if ("JOINED".equals(msg.getCommand())) {
-            currentRoomId = roomId;
-            state = ClientState.IN_ROOM;
-            return true;
-        }
-
-        return false;
-    }
-
-    /**
-     * Waits for game to start and processes initial game messages
-     * @return true if game started successfully
-     * @deprecated Use queue pattern from GameController instead
-     */
-    @Deprecated
-    public boolean waitForGameStart() {
-        while (state == ClientState.IN_ROOM) {
-            String response = networkClient.receive();
-            if (response == null) {
-                return false;
-            }
-
-            ProtocolMessage msg = ProtocolMessage.parse(response);
-            if (msg == null) {
-                continue;
-            }
-
-            if ("GAME_START".equals(msg.getCommand())) {
-                currentRole = msg.getParameter(0);
-                opponentNickname = msg.getParameter(1);
-                state = ClientState.PLAYING;
-                return true;
-            }
-        }
+        Logger.warning("Unknown response from server during login: " + response);
         return false;
     }
 
@@ -319,31 +186,6 @@ public class GameClient {
     }
 
     /**
-     * Sends a HIT request
-     * @return true if successful
-     */
-    public boolean hit() {
-        return networkClient.send(ProtocolMessage.hit().toString());
-    }
-
-    /**
-     * Sends a STAND request
-     * @return true if successful
-     */
-    public boolean stand() {
-        return networkClient.send(ProtocolMessage.stand().toString());
-    }
-
-    /**
-     * Plays a card
-     * @param card card to play
-     * @return true if successful
-     */
-    public boolean playCard(String card) {
-        return networkClient.send(ProtocolMessage.playCard(card).toString());
-    }
-
-    /**
      * Sends a message without waiting for response
      * @param msg message to send
      * @return true if successful
@@ -352,41 +194,17 @@ public class GameClient {
         return networkClient.send(msg.toString());
     }
 
-    /**
-     * Leaves current room
-     * @return true if successful
-     * @deprecated Use queue pattern from GameController instead
-     */
-    @Deprecated
-    public boolean leaveRoom() {
-        if (state != ClientState.IN_ROOM && state != ClientState.PLAYING) {
-            return false;
-        }
 
-        if (!networkClient.send(ProtocolMessage.leaveRoom().toString())) {
-            return false;
-        }
-
-        String response = networkClient.receive();
-        if (response != null) {
-            ProtocolMessage msg = ProtocolMessage.parse(response);
-            if (msg != null && "OK".equals(msg.getCommand())) {
-                state = ClientState.LOBBY;
-                currentRoomId = null;
-                return true;
-            }
-        }
-        return false;
-    }
 
     /**
      * Disconnects from server
      */
     public void disconnect() {
         if (state != ClientState.DISCONNECTED) {
+            Logger.info("Disconnecting from server.");
             networkClient.send(ProtocolMessage.disconnect().toString());
             networkClient.disconnect();
-            state = ClientState.DISCONNECTED;
+            setState(ClientState.DISCONNECTED);
         }
     }
 
@@ -394,10 +212,6 @@ public class GameClient {
 
     public ClientState getState() {
         return state;
-    }
-
-    public String getNickname() {
-        return nickname;
     }
 
     public String getSessionId() {
@@ -460,24 +274,12 @@ public class GameClient {
         return currentRound;
     }
 
-    public int getPlayerHandValue() {
-        return playerHandValue;
-    }
-
     public void setPlayerHandValue(int value) {
         this.playerHandValue = value;
     }
 
-    public int getOpponentHandValue() {
-        return opponentHandValue;
-    }
-
     public void setOpponentHandValue(int value) {
         this.opponentHandValue = value;
-    }
-
-    public String getCurrentRoomId() {
-        return currentRoomId;
     }
 
     public boolean isConnected() {
@@ -485,7 +287,10 @@ public class GameClient {
     }
 
     public void setState(ClientState newState) {
-        this.state = newState;
+        if (this.state != newState) {
+            Logger.info("Client state changed from " + this.state + " to " + newState);
+            this.state = newState;
+        }
     }
 
     public void setCurrentRoomId(String roomId) {
@@ -547,39 +352,45 @@ public class GameClient {
      */
     public boolean acceptReconnect() {
         if (!hasPendingReconnectQuery) {
+            Logger.warning("acceptReconnect called with no pending query.");
             return false;
         }
 
+        Logger.info("Accepting reconnect query.");
         // Send RECONNECT_ACCEPT
         if (!networkClient.send(ProtocolMessage.reconnectAccept().toString())) {
+            Logger.error("Failed to send RECONNECT_ACCEPT.");
             return false;
         }
 
         // Wait for OK response with session ID
         String response = networkClient.receive();
         if (response == null) {
+            Logger.error("No response from server after accepting reconnect.");
             return false;
         }
 
         ProtocolMessage msg = ProtocolMessage.parse(response);
         if (msg == null) {
+            Logger.error("Failed to parse server response after accepting reconnect.");
             return false;
         }
 
         if (msg.isError()) {
-            System.err.println("Reconnect accept failed: " + msg.getErrorMessage());
+            Logger.error("Reconnect accept failed: " + msg.getErrorMessage());
             hasPendingReconnectQuery = false;
             return false;
         }
 
         if ("OK".equals(msg.getCommand()) && msg.getParameterCount() > 0) {
             this.sessionId = msg.getParameter(0);
-            this.state = ClientState.PLAYING;  // Reconnecting to game
+            setState(ClientState.PLAYING);  // Reconnecting to game
             this.hasPendingReconnectQuery = false;
-            System.out.println("Reconnect accepted, session ID: " + sessionId);
+            Logger.info("Successfully reconnected. New session ID: " + this.sessionId);
             return true;
         }
 
+        Logger.warning("Unknown response from server after accepting reconnect: " + response);
         return false;
     }
 
@@ -589,39 +400,45 @@ public class GameClient {
      */
     public boolean declineReconnect() {
         if (!hasPendingReconnectQuery) {
+            Logger.warning("declineReconnect called with no pending query.");
             return false;
         }
 
+        Logger.info("Declining reconnect query.");
         // Send RECONNECT_DECLINE
         if (!networkClient.send(ProtocolMessage.reconnectDecline().toString())) {
+            Logger.error("Failed to send RECONNECT_DECLINE.");
             return false;
         }
 
         // Wait for OK response with new session ID
         String response = networkClient.receive();
         if (response == null) {
+            Logger.error("No response from server after declining reconnect.");
             return false;
         }
 
         ProtocolMessage msg = ProtocolMessage.parse(response);
         if (msg == null) {
+            Logger.error("Failed to parse server response after declining reconnect.");
             return false;
         }
 
         if (msg.isError()) {
-            System.err.println("Reconnect decline failed: " + msg.getErrorMessage());
+            Logger.error("Reconnect decline failed: " + msg.getErrorMessage());
             hasPendingReconnectQuery = false;
             return false;
         }
 
         if ("OK".equals(msg.getCommand()) && msg.getParameterCount() > 0) {
             this.sessionId = msg.getParameter(0);
-            this.state = ClientState.LOBBY;
+            setState(ClientState.LOBBY);
             this.hasPendingReconnectQuery = false;
-            System.out.println("Reconnect declined, starting fresh in lobby");
+            Logger.info("Successfully declined reconnect. New session ID: " + this.sessionId);
             return true;
         }
 
+        Logger.warning("Unknown response from server after declining reconnect: " + response);
         return false;
     }
 }

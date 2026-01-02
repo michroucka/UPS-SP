@@ -15,6 +15,7 @@ import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
+import cz.zcu.kiv.ups.sp.Logger;
 
 /**
  * JavaFX controller for the game GUI
@@ -62,8 +63,8 @@ public class GameController {
     private Thread messageProcessorThread;
     private Thread waitForGameStartThread;
     private volatile boolean running = false;
-    private BlockingQueue<ProtocolMessage> asyncMessageQueue = new LinkedBlockingQueue<>();
-    private BlockingQueue<ProtocolMessage> syncResponseQueue = new LinkedBlockingQueue<>();
+    private final BlockingQueue<ProtocolMessage> asyncMessageQueue = new LinkedBlockingQueue<>();
+    private final BlockingQueue<ProtocolMessage> syncResponseQueue = new LinkedBlockingQueue<>();
 
     // Reconnect state
     private volatile boolean isReconnecting = false;
@@ -79,7 +80,6 @@ public class GameController {
 
     @FXML
     public void initialize() {
-        debug("initialize() called");
         CardImageLoader.preloadImages();
         updateStatus("Ready to connect");
 
@@ -94,11 +94,6 @@ public class GameController {
 
         // Setup custom cell factory for room list
         setupRoomListView();
-        debug("initialize() completed");
-    }
-
-    private void debug(String message) {
-        System.out.println("[DEBUG][" + Thread.currentThread().getName() + "] " + message);
     }
 
     private void setupRoomListView() {
@@ -162,7 +157,6 @@ public class GameController {
 
     @FXML
     private void handleConnect() {
-        debug("handleConnect() called");
         String host = serverHostField.getText().trim();
         String portStr = serverPortField.getText().trim();
         String nickname = nicknameField.getText().trim();
@@ -190,18 +184,14 @@ public class GameController {
         updateStatus("Connecting to " + host + ":" + port + "...");
 
         new Thread(() -> {
-            debug("Connect thread started, connecting to " + host + ":" + port);
             try {
                 if (gameClient.connect()) {
-                    debug("Connected successfully, attempting login as " + nickname);
                     Platform.runLater(() -> updateStatus("Logging in as " + nickname + "..."));
 
                     if (gameClient.login(nickname)) {
-                        debug("Login successful");
 
                         // Check if server sent RECONNECT_QUERY
                         if (gameClient.hasPendingReconnectQuery()) {
-                            debug("Reconnect query detected - showing dialog to user");
 
                             String opponentName = gameClient.getReconnectOpponentNickname();
 
@@ -228,12 +218,10 @@ public class GameController {
                             try {
                                 dialogLatch.await();
                             } catch (InterruptedException e) {
-                                debug("Interrupted while waiting for user decision");
                                 return;
                             }
 
                             boolean reconnectAccepted = userChoice[0];
-                            debug("User chose to " + (reconnectAccepted ? "accept" : "decline") + " reconnect");
 
                             boolean reconnectResult;
                             if (reconnectAccepted) {
@@ -243,7 +231,6 @@ public class GameController {
                             }
 
                             if (!reconnectResult) {
-                                debug("Reconnect response failed");
                                 Platform.runLater(() -> {
                                     showError("Failed to process reconnect response");
                                     updateStatus("Reconnect failed");
@@ -254,14 +241,10 @@ public class GameController {
 
                             // Continue based on user choice
                             if (reconnectAccepted) {
-                                debug("Reconnect accepted - will restore game state");
 
                                 // Start heartbeat and message receiver
                                 gameClient.getNetworkClient().startHeartbeat(() -> {
-                                    Platform.runLater(() -> {
-                                        debug("Heartbeat detected server unavailability");
-                                        handleServerUnavailable();
-                                    });
+                                    Platform.runLater(this::handleServerUnavailable);
                                 });
 
                                 startMessageReceiver();
@@ -285,32 +268,23 @@ public class GameController {
                                 startMessageProcessor();
 
                                 // Wait for game state messages (GAME_START, GAME_STATE, etc.)
-                                Platform.runLater(() -> {
-                                    waitForGameStart();  // This will process GAME_START and restore state
-                                });
+                                // This will process GAME_START and restore state
+                                Platform.runLater(this::waitForGameStart);
 
                                 return;  // Exit early - reconnect flow complete
-                            } else {
-                                debug("Reconnect declined - starting fresh in lobby");
-                                // Fall through to normal login flow below
                             }
                         }
 
-                        debug("Starting message receiver");
 
                         // Start heartbeat to detect server unavailability
                         gameClient.getNetworkClient().startHeartbeat(() -> {
-                            Platform.runLater(() -> {
-                                debug("Heartbeat detected server unavailability");
-                                handleServerUnavailable();
-                            });
+                            Platform.runLater(this::handleServerUnavailable);
                         });
 
                         // Start message receiver immediately after login!
                         startMessageReceiver();
 
                         Platform.runLater(() -> {
-                            debug("Updating UI after successful login");
                             connectionStatus.setText("Connected");
                             connectionStatus.setStyle("-fx-text-fill: #4CAF50; -fx-font-weight: bold;");
                             connectButton.setDisable(true);
@@ -336,14 +310,12 @@ public class GameController {
                                 ProtocolMessage playerDisconnected = asyncMessageQueue.poll();
 
                                 if (gameStart != null && gameStart.getCommand().equals("GAME_START")) {
-                                    debug("Reconnect detected (GAME_START in queue), processing reconnect");
                                     syncResponseQueue.offer(gameStart);
 
                                     // Start message processor now
                                     startMessageProcessor();
 
                                     Platform.runLater(() -> {
-                                        debug("Reconnect - showing game panel without reset");
                                         lobbyPanel.setVisible(false);
                                         gamePanel.setVisible(true);
                                         waitForGameStart();
@@ -357,14 +329,12 @@ public class GameController {
                                 }
 
                                 if (playerDisconnected != null && playerDisconnected.getCommand().equals("PLAYER_DISCONNECTED")) {
-                                    debug("Reconnect detected (PLAYER_DISCONNECTED in queue, waiting for opponent)");
                                     asyncMessageQueue.offer(playerDisconnected);
 
                                     // Start message processor now
                                     startMessageProcessor();
 
                                     Platform.runLater(() -> {
-                                        debug("Reconnect - showing game panel, waiting for opponent");
                                         lobbyPanel.setVisible(false);
                                         gamePanel.setVisible(true);
                                         // PLAYER_DISCONNECTED handler will show waitingForOpponentArea
@@ -381,7 +351,6 @@ public class GameController {
                                 }
 
                                 // No reconnect - this is normal login, show lobby
-                                debug("No reconnect detected, showing lobby");
 
                                 // Reset game client state (important after server restart)
                                 boolean wasInGame = false;
@@ -409,12 +378,10 @@ public class GameController {
                                                  "You have been returned to the lobby.");
                                     }
                                 });
-                            } catch (InterruptedException e) {
-                                debug("Interrupted while waiting for reconnect detection");
+                            } catch (InterruptedException ignored) {
                             }
                         }).start();
                     } else {
-                        debug("Login failed");
                         Platform.runLater(() -> {
                             showError("Login failed. Nickname may already be in use or server rejected the connection.");
                             updateStatus("Login failed");
@@ -422,7 +389,6 @@ public class GameController {
                         });
                     }
                 } else {
-                    debug("Connection failed");
                     Platform.runLater(() -> {
                         showError("Connection failed. Make sure the server is running at " + host + ":" + port);
                         updateStatus("Connection failed");
@@ -430,8 +396,7 @@ public class GameController {
                     });
                 }
             } catch (Exception e) {
-                debug("Connection error: " + e.getMessage());
-                e.printStackTrace();
+                Logger.error("Connection error: " + e.getMessage());
                 Platform.runLater(() -> {
                     showError("Connection error: " + e.getMessage());
                     updateStatus("Connection error");
@@ -443,7 +408,6 @@ public class GameController {
 
     @FXML
     private void handleDisconnect() {
-        debug("handleDisconnect() called");
         // Mark as manual disconnect to prevent auto-reconnect
         manualDisconnect = true;
 
@@ -465,17 +429,14 @@ public class GameController {
 
         // Run disconnect in background thread to avoid UI freezing
         new Thread(() -> {
-            debug("Disconnect thread started");
             stopMessageReceiver();
             if (gameClient != null) {
-                debug("Disconnecting from server");
                 gameClient.getNetworkClient().stopHeartbeat();
                 gameClient.disconnect();
                 gameClient = null;
             }
 
             Platform.runLater(() -> {
-                debug("Updating UI after disconnect");
                 alert.close();
                 connectionStatus.setText("Disconnected");
                 connectionStatus.setStyle("-fx-text-fill: #f44336; -fx-font-weight: bold;");
@@ -500,7 +461,6 @@ public class GameController {
             return;
         }
 
-        debug("Server unavailable - initiating reconnect");
 
         // Stop message processing
         stopMessageReceiver();
@@ -522,12 +482,10 @@ public class GameController {
 
     @FXML
     private void handleRefreshRooms() {
-        debug("handleRefreshRooms() called");
         if (gameClient == null) return;
 
         // Only allow refresh when in lobby
         if (gameClient.getState() != GameClient.ClientState.LOBBY) {
-            debug("Cannot refresh rooms - not in lobby, state=" + gameClient.getState());
             updateStatus("Cannot refresh rooms - not in lobby");
             return;
         }
@@ -535,13 +493,10 @@ public class GameController {
         updateStatus("Refreshing room list...");
 
         new Thread(() -> {
-            debug("Refresh rooms thread started");
             try {
                 // Send ROOM_LIST message (don't wait synchronously)
                 ProtocolMessage roomListMsg = ProtocolMessage.roomList();
-                debug("Sending ROOM_LIST message");
                 if (!gameClient.sendMessage(roomListMsg)) {
-                    debug("Failed to send ROOM_LIST message");
                     Platform.runLater(() -> {
                         showError("Failed to send room list request");
                         updateStatus("Failed to refresh rooms");
@@ -550,11 +505,9 @@ public class GameController {
                 }
 
                 // Wait for ROOMS response from queue
-                debug("Waiting for ROOMS response");
                 ProtocolMessage roomsResponse = waitForResponse("ROOMS", 5);
 
                 if (roomsResponse != null && roomsResponse.getCommand().equals("ERROR")) {
-                    debug("Error fetching rooms: " + roomsResponse.getErrorMessage());
                     Platform.runLater(() -> {
                         showError("Cannot fetch rooms: " + roomsResponse.getErrorMessage());
                         updateStatus("Failed to refresh rooms");
@@ -564,7 +517,6 @@ public class GameController {
                 }
 
                 if (roomsResponse == null || roomsResponse.getParameterCount() == 0) {
-                    debug("No ROOMS response received");
                     Platform.runLater(() -> {
                         updateStatus("No response from server");
                         roomListView.getItems().clear();
@@ -581,15 +533,12 @@ public class GameController {
                     });
                     return;
                 }
-                debug("Received ROOMS response, room count=" + roomCount);
                 List<RoomInfo> rooms = new ArrayList<>();
 
                 // Read each ROOM message from queue and parse to RoomInfo
                 for (int i = 0; i < roomCount; i++) {
-                    debug("Waiting for ROOM message " + (i + 1) + "/" + roomCount);
                     ProtocolMessage roomMsg = waitForResponse("ROOM", 5);
                     if (roomMsg != null) {
-                        debug("Received ROOM: " + roomMsg.toString());
                         // Parse ROOM message to RoomInfo
                         RoomInfo room = RoomInfo.parse(roomMsg.toString());
                         if (room != null) {
@@ -600,12 +549,10 @@ public class GameController {
 
                 // Sort rooms by ID for consistent ordering
                 rooms.sort((r1, r2) -> r1.getId().compareTo(r2.getId()));
-                debug("Parsed " + rooms.size() + " rooms");
 
                 // Update UI
                 final List<RoomInfo> finalRooms = rooms;
                 Platform.runLater(() -> {
-                    debug("Updating room list UI with " + finalRooms.size() + " rooms");
                     roomListView.getItems().clear();
                     if (!finalRooms.isEmpty()) {
                         roomListView.getItems().addAll(finalRooms);
@@ -616,8 +563,7 @@ public class GameController {
                 });
 
             } catch (Exception e) {
-                debug("Error refreshing rooms: " + e.getMessage());
-                e.printStackTrace();
+                Logger.error("Error refreshing rooms: " + e.getMessage());
                 Platform.runLater(() -> {
                     showError("Error refreshing rooms: " + e.getMessage());
                     updateStatus("Failed to refresh rooms");
@@ -628,9 +574,7 @@ public class GameController {
 
     @FXML
     private void handleCreateRoom() {
-        debug("handleCreateRoom() called");
         if (gameClient == null || gameClient.getState() != GameClient.ClientState.LOBBY) {
-            debug("Cannot create room - not in lobby");
             updateStatus("Cannot create room - not in lobby");
             return;
         }
@@ -641,17 +585,13 @@ public class GameController {
             return;
         }
 
-        debug("Creating room: " + roomName);
         updateStatus("Creating room '" + roomName + "'...");
 
         new Thread(() -> {
-            debug("Create room thread started");
             try {
                 // Send CREATE_ROOM message (don't wait synchronously)
                 ProtocolMessage createMsg = ProtocolMessage.createRoom(roomName);
-                debug("Sending CREATE_ROOM message: " + roomName);
                 if (!gameClient.sendMessage(createMsg)) {
-                    debug("Failed to send CREATE_ROOM message");
                     Platform.runLater(() -> {
                         showError("Failed to send create room request");
                         updateStatus("Failed to create room");
@@ -660,18 +600,15 @@ public class GameController {
                 }
 
                 // Wait for ROOM_CREATED response from queue
-                debug("Waiting for ROOM_CREATED response");
                 ProtocolMessage response = waitForResponse("ROOM_CREATED", 10);
 
                 if (response != null && response.getCommand().equals("ROOM_CREATED") && response.getParameterCount() > 0) {
                     // Successfully created room!
                     String roomId = response.getParameter(0);
-                    debug("Room created successfully, roomId=" + roomId);
                     gameClient.setCurrentRoomId(roomId);
                     gameClient.setState(GameClient.ClientState.IN_ROOM);
 
                     Platform.runLater(() -> {
-                        debug("Updating UI - showing game panel and waiting for opponent");
                         updateStatus("Room created! Waiting for opponent...");
                         showGame();
                         gameInfoContainer.setVisible(false);
@@ -680,26 +617,22 @@ public class GameController {
                         waitingForOpponentArea.setVisible(true);
                     });
 
-                    debug("Starting waitForGameStart()");
                     waitForGameStart();
                 } else if (response != null && response.getCommand().equals("ERROR")) {
                     // Server returned error
-                    debug("Failed to create room - server error: " + response.getErrorMessage());
                     Platform.runLater(() -> {
                         showError("Cannot create room: " + response.getErrorMessage());
                         updateStatus("Failed to create room");
                     });
                 } else {
                     // Timeout
-                    debug("Failed to create room - timeout");
                     Platform.runLater(() -> {
                         showError("Failed to create room (timeout)");
                         updateStatus("Failed to create room");
                     });
                 }
             } catch (Exception e) {
-                debug("Error creating room: " + e.getMessage());
-                e.printStackTrace();
+                Logger.error("Error creating room: " + e.getMessage());
                 Platform.runLater(() -> {
                     showError("Error creating room: " + e.getMessage());
                     updateStatus("Error creating room");
@@ -712,9 +645,7 @@ public class GameController {
      * Joins a room by ID (called from Join button in room list)
      */
     private void joinRoomById(String roomId) {
-        debug("joinRoomById() called, roomId=" + roomId);
         if (gameClient == null || gameClient.getState() != GameClient.ClientState.LOBBY) {
-            debug("Cannot join room - not in lobby");
             updateStatus("Cannot join room - not in lobby");
             return;
         }
@@ -722,13 +653,10 @@ public class GameController {
         updateStatus("Joining room " + roomId + "...");
 
         new Thread(() -> {
-            debug("Join room thread started");
             try {
                 // Send JOIN_ROOM message (don't wait synchronously)
                 ProtocolMessage joinMsg = ProtocolMessage.joinRoom(roomId);
-                debug("Sending JOIN_ROOM message: " + roomId);
                 if (!gameClient.sendMessage(joinMsg)) {
-                    debug("Failed to send JOIN_ROOM message");
                     Platform.runLater(() -> {
                         showError("Failed to send join room request");
                         updateStatus("Failed to join room");
@@ -737,17 +665,14 @@ public class GameController {
                 }
 
                 // Wait for JOINED response from queue
-                debug("Waiting for JOINED response");
                 ProtocolMessage response = waitForResponse("JOINED", 10);
 
                 if (response != null && response.getCommand().equals("JOINED")) {
                     // Successfully joined room!
-                    debug("Joined room successfully, roomId=" + roomId);
                     gameClient.setCurrentRoomId(roomId);
                     gameClient.setState(GameClient.ClientState.IN_ROOM);
 
                     Platform.runLater(() -> {
-                        debug("Updating UI - showing game panel and waiting for game to start");
                         updateStatus("Joined room! Waiting for game to start...");
                         showGame();
                         gameInfoContainer.setVisible(false);
@@ -756,26 +681,22 @@ public class GameController {
                         waitingForOpponentArea.setVisible(true);
                     });
 
-                    debug("Starting waitForGameStart()");
                     waitForGameStart();
                 } else if (response != null && response.getCommand().equals("ERROR")) {
                     // Server returned error
-                    debug("Failed to join room - server error: " + response.getErrorMessage());
                     Platform.runLater(() -> {
                         showError("Cannot join room: " + response.getErrorMessage());
                         updateStatus("Failed to join room");
                     });
                 } else {
                     // Timeout
-                    debug("Failed to join room - timeout");
                     Platform.runLater(() -> {
                         showError("Failed to join room (timeout)");
                         updateStatus("Failed to join room");
                     });
                 }
             } catch (Exception e) {
-                debug("Error joining room: " + e.getMessage());
-                e.printStackTrace();
+                Logger.error("Error joining room: " + e.getMessage());
                 Platform.runLater(() -> {
                     showError("Error joining room: " + e.getMessage());
                     updateStatus("Error joining room");
@@ -787,7 +708,6 @@ public class GameController {
 
     @FXML
     private void handleHit() {
-        debug("handleHit() called");
         if (gameClient == null) return;
 
         // Disable buttons immediately
@@ -796,13 +716,10 @@ public class GameController {
         updateStatus("Requesting card...");
 
         new Thread(() -> {
-            debug("Hit thread started");
             try {
                 // Send HIT message
                 ProtocolMessage hitMsg = ProtocolMessage.hit();
-                debug("Sending HIT message");
                 if (!gameClient.sendMessage(hitMsg)) {
-                    debug("Failed to send HIT message");
                     Platform.runLater(() -> {
                         showError("Failed to send hit request");
                         updateStatus("Failed to hit");
@@ -813,16 +730,13 @@ public class GameController {
                 }
 
                 // Wait for OK response from queue
-                debug("Waiting for OK response");
                 ProtocolMessage response = waitForResponse("OK", 5);
 
                 if (response != null && response.getCommand().equals("OK")) {
-                    debug("HIT confirmed by server");
                     Platform.runLater(() -> {
                         updateStatus("Card incoming...");
                     });
                 } else if (response != null && response.getCommand().equals("ERROR")) {
-                    debug("HIT rejected: " + response.getErrorMessage());
                     Platform.runLater(() -> {
                         showError("Server rejected HIT: " + response.getErrorMessage());
                         updateStatus("Hit rejected");
@@ -830,7 +744,6 @@ public class GameController {
                         standButton.setDisable(false);
                     });
                 } else {
-                    debug("Hit timeout - server did not respond");
                     Platform.runLater(() -> {
                         showError("Server did not respond to hit request");
                         updateStatus("Hit failed");
@@ -839,8 +752,7 @@ public class GameController {
                     });
                 }
             } catch (Exception e) {
-                debug("Error during hit: " + e.getMessage());
-                e.printStackTrace();
+                Logger.error("Error during hit: " + e.getMessage());
                 Platform.runLater(() -> {
                     showError("Error during hit: " + e.getMessage());
                     updateStatus("Hit error");
@@ -853,7 +765,6 @@ public class GameController {
 
     @FXML
     private void handleStand() {
-        debug("handleStand() called");
         if (gameClient == null) return;
 
         // Disable buttons immediately
@@ -862,13 +773,10 @@ public class GameController {
         updateStatus("Standing...");
 
         new Thread(() -> {
-            debug("Stand thread started");
             try {
                 // Send STAND message
                 ProtocolMessage standMsg = ProtocolMessage.stand();
-                debug("Sending STAND message");
                 if (!gameClient.sendMessage(standMsg)) {
-                    debug("Failed to send STAND message");
                     Platform.runLater(() -> {
                         showError("Failed to send stand request");
                         updateStatus("Failed to stand");
@@ -877,17 +785,14 @@ public class GameController {
                 }
 
                 // Wait for OK response from queue
-                debug("Waiting for OK response");
                 ProtocolMessage response = waitForResponse("OK", 5);
 
                 if (response != null) {
-                    debug("STAND confirmed by server");
                     Platform.runLater(() -> {
                         waitingArea.setVisible(true);
                         updateStatus("Standing - waiting for opponent...");
                     });
                 } else {
-                    debug("Stand timeout - server did not respond");
                     Platform.runLater(() -> {
                         showError("Server did not respond to stand request");
                         updateStatus("Stand failed");
@@ -897,8 +802,7 @@ public class GameController {
                     });
                 }
             } catch (Exception e) {
-                debug("Error during stand: " + e.getMessage());
-                e.printStackTrace();
+                Logger.error("Error during stand: " + e.getMessage());
                 Platform.runLater(() -> {
                     showError("Error during stand: " + e.getMessage());
                     updateStatus("Stand error");
@@ -912,7 +816,6 @@ public class GameController {
 
     @FXML
     private void handleLeaveGame() {
-        debug("handleLeaveGame() called");
         Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
         alert.setTitle("Leave Game");
         alert.setHeaderText("Are you sure you want to leave the game?");
@@ -920,16 +823,12 @@ public class GameController {
 
         Optional<ButtonType> result = alert.showAndWait();
         if (result.isPresent() && result.get() == ButtonType.OK) {
-            debug("User confirmed leaving game");
             new Thread(() -> {
-                debug("Leave game thread started");
                 try {
                     if (gameClient != null) {
                         // Send LEAVE_ROOM message (don't stop receiver yet!)
                         ProtocolMessage leaveMsg = ProtocolMessage.leaveRoom();
-                        debug("Sending LEAVE_ROOM message");
                         if (!gameClient.sendMessage(leaveMsg)) {
-                            debug("Failed to send LEAVE_ROOM message");
                             Platform.runLater(() -> {
                                 showError("Failed to send leave room request");
                             });
@@ -937,19 +836,16 @@ public class GameController {
                         }
 
                         // Wait for OK response from queue
-                        debug("Waiting for OK response");
                         ProtocolMessage response = waitForResponse("OK", 5);
 
                         if (response != null && response.getCommand().equals("OK")) {
                             // Server confirmed - update state
-                            debug("Leave room confirmed by server, returning to lobby");
                             gameClient.setState(GameClient.ClientState.LOBBY);
                             gameClient.setCurrentRoomId(null);
 
                             Platform.runLater(this::showLobby);
                         } else if (response != null && response.getCommand().equals("ERROR")) {
                             // Error (probably not in room - server restarted)
-                            debug("Leave room error: " + response.getErrorMessage() + " - resetting to lobby anyway");
                             gameClient.resetGameState();
                             gameClient.setState(GameClient.ClientState.LOBBY);
                             gameClient.setCurrentRoomId(null);
@@ -960,7 +856,6 @@ public class GameController {
                             });
                         } else {
                             // Timeout
-                            debug("Leave room timeout - server did not respond");
                             Platform.runLater(() -> {
                                 showError("Server did not respond to leave request");
                                 handleDisconnect();
@@ -968,30 +863,24 @@ public class GameController {
                         }
                     }
                 } catch (Exception e) {
-                    debug("Error leaving game: " + e.getMessage());
-                    e.printStackTrace();
+                    Logger.error("Error leaving game: " + e.getMessage());
                     Platform.runLater(() -> {
                         showError("Error leaving game: " + e.getMessage());
                     });
                 }
             }).start();
-        } else {
-            debug("User cancelled leaving game");
         }
     }
 
     private void waitForGameStart() {
         // Cancel any existing waitForGameStart thread
         if (waitForGameStartThread != null && waitForGameStartThread.isAlive()) {
-            debug("waitForGameStart() - cancelling existing thread: " + waitForGameStartThread.getName());
             waitForGameStartThread.interrupt();
         }
 
         waitForGameStartThread = new Thread(() -> {
-            debug("waitForGameStart() started");
 
             // Wait for GAME_START from queue
-            debug("Waiting for GAME_START response");
             ProtocolMessage response = waitForResponse("GAME_START");
 
             if (response != null && response.getParameterCount() >= 2) {
@@ -1000,7 +889,6 @@ public class GameController {
                 String opponentNick = response.getParameter(1);
 
                 if (!MessageValidator.validateRole(role)) {
-                    debug("GAME_START failed - invalid role: " + role);
                     Platform.runLater(() -> {
                         showError("Invalid role from server: " + role);
                         stopMessageReceiver();
@@ -1010,7 +898,6 @@ public class GameController {
                 }
 
                 if (!MessageValidator.validateNotNull(opponentNick, "opponentNickname")) {
-                    debug("GAME_START failed - null opponent nickname");
                     Platform.runLater(() -> {
                         showError("Invalid opponent nickname from server");
                         stopMessageReceiver();
@@ -1019,14 +906,12 @@ public class GameController {
                     return;
                 }
 
-                debug("GAME_START received, role=" + role + ", opponent=" + opponentNick);
 
                 gameClient.setCurrentRole(role);
                 gameClient.setOpponentNickname(opponentNick);
                 gameClient.setState(GameClient.ClientState.PLAYING);
 
                 Platform.runLater(() -> {
-                    debug("GAME_START UI update - hiding waitingForOpponentArea, showing game UI");
                     waitingForOpponentArea.setVisible(false);
                     gameInfoContainer.setVisible(true);
                     cardsContainer.setVisible(true);
@@ -1038,10 +923,8 @@ public class GameController {
                 });
             } else if (Thread.currentThread().isInterrupted()) {
                 // Thread was cancelled - this is normal (e.g., when starting a new waitForGameStart)
-                debug("waitForGameStart cancelled (thread interrupted) - this is normal");
             } else {
                 // Real error - no response and thread not interrupted
-                debug("Game start failed - no response from server");
                 Platform.runLater(() -> {
                     showError("Game did not start");
                     stopMessageReceiver();
@@ -1051,17 +934,15 @@ public class GameController {
         });
         waitForGameStartThread.setDaemon(true);
         waitForGameStartThread.start();
-        debug("waitForGameStart() - started new thread: " + waitForGameStartThread.getName());
     }
 
     private void startMessageReceiver() {
-        debug("startMessageReceiver() called");
         running = true;
         asyncMessageQueue.clear();
         syncResponseQueue.clear();
 
         messageReceiverThread = new Thread(() -> {
-            debug("Message receiver thread started");
+            Logger.info("Message receiver thread started.");
             while (running && gameClient != null && gameClient.isConnected()) {
                 try {
                     ProtocolMessage msg = gameClient.receiveMessage();
@@ -1072,38 +953,30 @@ public class GameController {
                         continue;
                     }
 
-                    debug("Received message: " + msg.getCommand());
 
                     // Ignore PONG messages - they are sent by server in response to heartbeat PING
                     // but heartbeat no longer waits for them (it only checks if send() succeeds)
                     if ("PONG".equals(msg.getCommand())) {
-                        debug("PONG received (heartbeat response) - ignoring");
                         continue;
                     }
 
                     // Route message to appropriate queue based on type
                     if (isAsyncMessage(msg)) {
                         if (!asyncMessageQueue.offer(msg)) {
-                            debug("ERROR: Failed to add async message to queue!");
-                        } else {
-                            debug("Async message added to queue: " + msg.getCommand() + ", queue size=" + asyncMessageQueue.size());
+                            Logger.warning("Async message queue is full, dropping message: " + msg);
                         }
                     } else {
                         // Synchronous response (OK, ROOM_CREATED, JOINED, ROOMS, ROOM, etc.)
                         if (!syncResponseQueue.offer(msg)) {
-                            debug("ERROR: Failed to add sync response to queue!");
-                        } else {
-                            debug("Sync response added to queue: " + msg.getCommand() + ", queue size=" + syncResponseQueue.size());
+                            Logger.warning("Sync response queue is full, dropping message: " + msg);
                         }
                     }
 
                 } catch (Exception e) {
                     if (running && !manualDisconnect) {
-                        debug("Message receiver error (connection lost): " + e.getMessage());
-                        e.printStackTrace();
+                        Logger.error("Error in message receiver: " + e.getMessage());
                         // Connection lost unexpectedly - attempt reconnect
-                        debug("Message receiver: triggering automatic reconnect");
-                        Platform.runLater(() -> attemptReconnect());
+                        Platform.runLater(this::attemptReconnect);
                     }
                     break;
                 }
@@ -1111,11 +984,9 @@ public class GameController {
 
             // Check if we exited because connection was lost
             if (running && !manualDisconnect && (gameClient == null || !gameClient.isConnected())) {
-                debug("Message receiver: connection lost detected, triggering reconnect");
-                Platform.runLater(() -> attemptReconnect());
+                Platform.runLater(this::attemptReconnect);
             }
-
-            debug("Message receiver thread ended");
+            Logger.info("Message receiver thread stopped.");
         });
         messageReceiverThread.setDaemon(true);
         messageReceiverThread.start();
@@ -1128,9 +999,8 @@ public class GameController {
      * Processes asynchronous messages from the queue (YOUR_TURN, ROUND_END, etc.)
      */
     private void startMessageProcessor() {
-        debug("startMessageProcessor() called");
         messageProcessorThread = new Thread(() -> {
-            debug("Message processor thread started");
+            Logger.info("Message processor thread started.");
             while (running) {
                 try {
                     // Only read from async queue - no need to check message type or put back
@@ -1140,30 +1010,25 @@ public class GameController {
                         continue;
                     }
 
-                    debug("Processing async message from queue: " + msg.getCommand());
                     handleMessage(msg);
 
                     // After ROUND_END, wait before processing next message
                     // This keeps cards visible while showing round result
                     if (msg.getCommand().equals("ROUND_END")) {
-                        debug("ROUND_END processed, sleeping for 5s to show result");
                         Thread.sleep(5000);
 
                         // After delay, hide round result
                         // Cards will be updated when DEAL_CARDS is processed
                         Platform.runLater(() -> {
-                            debug("Hiding round result area after delay");
                             roundResultArea.setVisible(false);
                         });
                     }
                     // After GAME_END, wait 5s then return to lobby
                     else if (msg.getCommand().equals("GAME_END")) {
-                        debug("GAME_END processed, sleeping for 5s before returning to lobby");
                         Thread.sleep(5000);
 
                         // After delay, reset everything and return to lobby
                         Platform.runLater(() -> {
-                            debug("Returning to lobby after GAME_END delay");
                             roundResultArea.setVisible(false);
                             resetGameUI();
 
@@ -1177,13 +1042,11 @@ public class GameController {
                             updateStatus("Returned to lobby");
                         });
                     }
-
                 } catch (InterruptedException e) {
-                    debug("Message processor interrupted");
                     break;
                 }
             }
-            debug("Message processor thread ended");
+            Logger.info("Message processor thread stopped.");
         });
         messageProcessorThread.setDaemon(true);
         messageProcessorThread.start();
@@ -1212,7 +1075,6 @@ public class GameController {
      * @return The message or null if timeout
      */
     private ProtocolMessage waitForResponse(String expectedCommand, int timeoutSeconds) {
-        debug("waitForResponse() called, expecting: " + expectedCommand + ", timeout=" + timeoutSeconds + "s");
         long deadline = System.currentTimeMillis() + (timeoutSeconds * 1000L);
 
         while (System.currentTimeMillis() < deadline && !Thread.currentThread().isInterrupted()) {
@@ -1230,15 +1092,12 @@ public class GameController {
                     continue;
                 }
 
-                debug("waitForResponse: got message " + msg.getCommand() + ", expecting " + expectedCommand);
                 if (msg.getCommand().equals(expectedCommand)) {
-                    debug("waitForResponse: found expected message " + expectedCommand);
                     return msg;
                 }
 
                 // Check for ERROR - this indicates the command failed
                 if (msg.getCommand().equals("ERROR")) {
-                    debug("waitForResponse: got ERROR instead of " + expectedCommand + ": " + msg.getErrorMessage());
                     // Return the ERROR message so caller can handle it
                     return msg;
                 }
@@ -1246,22 +1105,15 @@ public class GameController {
                 // Not the expected message - could be a different sync response
                 // This might happen if multiple threads are waiting for different responses
                 // Put it back and wait a bit
-                debug("waitForResponse: got unexpected sync message " + msg.getCommand() + ", putting back");
                 syncResponseQueue.offer(msg);
                 Thread.sleep(50);
 
             } catch (InterruptedException e) {
-                debug("waitForResponse: interrupted while waiting for " + expectedCommand);
                 Thread.currentThread().interrupt(); // Preserve interrupt status
                 return null;
             }
         }
 
-        if (Thread.currentThread().isInterrupted()) {
-            debug("waitForResponse: cancelled (interrupted) while waiting for " + expectedCommand);
-        } else {
-            debug("waitForResponse: timeout waiting for " + expectedCommand);
-        }
         return null;
     }
 
@@ -1273,7 +1125,6 @@ public class GameController {
      * @return The message or null if interrupted
      */
     private ProtocolMessage waitForResponse(String expectedCommand) {
-        debug("waitForResponse() called, expecting: " + expectedCommand + " (no timeout)");
 
         while (!Thread.currentThread().isInterrupted()) {
             try {
@@ -1284,15 +1135,12 @@ public class GameController {
                     continue;
                 }
 
-                debug("waitForResponse: got message " + msg.getCommand() + ", expecting " + expectedCommand);
                 if (msg.getCommand().equals(expectedCommand)) {
-                    debug("waitForResponse: found expected message " + expectedCommand);
                     return msg;
                 }
 
                 // Check for ERROR - this indicates the command failed
                 if (msg.getCommand().equals("ERROR")) {
-                    debug("waitForResponse: got ERROR instead of " + expectedCommand + ": " + msg.getErrorMessage());
                     // Return the ERROR message so caller can handle it
                     return msg;
                 }
@@ -1300,18 +1148,15 @@ public class GameController {
                 // Not the expected message - could be a different sync response
                 // This might happen if multiple threads are waiting for different responses
                 // Put it back and wait a bit
-                debug("waitForResponse: got unexpected sync message " + msg.getCommand() + ", putting back");
                 syncResponseQueue.offer(msg);
                 Thread.sleep(50);
 
             } catch (InterruptedException e) {
-                debug("waitForResponse: interrupted while waiting for " + expectedCommand);
                 Thread.currentThread().interrupt(); // Preserve interrupt status
                 return null;
             }
         }
 
-        debug("waitForResponse: cancelled (interrupted) while waiting for " + expectedCommand);
         return null;
     }
 
@@ -1320,12 +1165,10 @@ public class GameController {
      */
     private void attemptReconnect() {
         if (isReconnecting || manualDisconnect) {
-            debug("attemptReconnect: skipping (isReconnecting=" + isReconnecting + ", manualDisconnect=" + manualDisconnect + ")");
             return;
         }
 
         isReconnecting = true;
-        debug("attemptReconnect: starting automatic reconnect attempts");
         showAlert("Lost connection to server",
                 "Connection to the server has been lost. The application will now try to reconnect automatically.");
 
@@ -1345,29 +1188,23 @@ public class GameController {
                 });
 
                 try {
-                    debug("attemptReconnect: waiting " + delay + "ms before attempt " + attempts);
                     Thread.sleep(delay);
                 } catch (InterruptedException e) {
-                    debug("attemptReconnect: interrupted during sleep");
                     break;
                 }
 
                 if (manualDisconnect) {
-                    debug("attemptReconnect: manual disconnect detected, aborting");
                     break;
                 }
 
-                debug("attemptReconnect: attempt " + attempts + " - creating new GameClient");
                 // Create new client and attempt to reconnect
                 GameClient newClient = new GameClient(lastServerHost, lastServerPort);
 
-                // Try reconnect with session ID
+                // Try to reconnect with session ID
                 String sessionIdToRestore = (gameClient != null) ? gameClient.getSessionId() : null;
 
                 if (newClient.connect()) {
-                    debug("attemptReconnect: connected, attempting login as " + lastNickname + " with session ID");
                     if (newClient.login(lastNickname, sessionIdToRestore)) {
-                        debug("attemptReconnect: login successful!");
                         reconnected = true;
 
                         // Replace old client with new one
@@ -1382,24 +1219,17 @@ public class GameController {
                         });
 
                         // Stop message receiver and processor first (to prevent them from consuming reconnect messages)
-                        debug("attemptReconnect: stopping message receiver/processor before reconnect detection");
                         stopMessageReceiver();
 
                         // Restart message receiver
-                        debug("attemptReconnect: restarting message receiver");
                         startMessageReceiver();
 
                         // Restart heartbeat to continue monitoring server availability
-                        debug("attemptReconnect: restarting heartbeat");
                         gameClient.getNetworkClient().startHeartbeat(() -> {
-                            Platform.runLater(() -> {
-                                debug("Heartbeat detected server unavailability after reconnect");
-                                handleServerUnavailable();
-                            });
+                            Platform.runLater(this::handleServerUnavailable);
                         });
 
                         // Wait for server to restore state (reconnect detection)
-                        debug("attemptReconnect: waiting for server to restore state");
 
                         // Same reconnect detection as after initial login
                         new Thread(() -> {
@@ -1414,14 +1244,12 @@ public class GameController {
                                 ProtocolMessage playerDisconnected = asyncMessageQueue.poll();
 
                                 if (gameStart != null && gameStart.getCommand().equals("GAME_START")) {
-                                    debug("Reconnect detected (GAME_START in queue), processing reconnect");
                                     syncResponseQueue.offer(gameStart);
 
                                     // Start message processor now
                                     startMessageProcessor();
 
                                     Platform.runLater(() -> {
-                                        debug("Reconnect - showing game panel without reset");
                                         lobbyPanel.setVisible(false);
                                         gamePanel.setVisible(true);
                                         waitForGameStart();
@@ -1435,14 +1263,12 @@ public class GameController {
                                 }
 
                                 if (playerDisconnected != null && playerDisconnected.getCommand().equals("PLAYER_DISCONNECTED")) {
-                                    debug("Reconnect detected (PLAYER_DISCONNECTED in queue, waiting for opponent)");
                                     asyncMessageQueue.offer(playerDisconnected);
 
                                     // Start message processor now
                                     startMessageProcessor();
 
                                     Platform.runLater(() -> {
-                                        debug("Reconnect - showing game panel, waiting for opponent");
                                         lobbyPanel.setVisible(false);
                                         gamePanel.setVisible(true);
                                         // PLAYER_DISCONNECTED handler will show waitingForOpponentArea
@@ -1459,7 +1285,6 @@ public class GameController {
                                 }
 
                                 // No reconnect - server restarted, reset state and show lobby
-                                debug("No reconnect detected after auto-reconnect, showing lobby");
 
                                 // Reset game client state (server restarted)
                                 boolean wasInGame = false;
@@ -1487,20 +1312,14 @@ public class GameController {
                                                  "You have been returned to the lobby.");
                                     }
                                 });
-                            } catch (InterruptedException e) {
-                                debug("Interrupted while waiting for reconnect detection after auto-reconnect");
+                            } catch (InterruptedException ignored) {
                             }
                         }).start();
-                    } else {
-                        debug("attemptReconnect: login failed on attempt " + attempts);
                     }
-                } else {
-                    debug("attemptReconnect: connection failed on attempt " + attempts);
                 }
             }
 
             if (!reconnected && !manualDisconnect) {
-                debug("attemptReconnect: all automatic attempts failed, showing manual reconnect dialog");
                 // All automatic attempts failed - offer manual reconnect
                 Platform.runLater(() -> {
                     updateStatus("Unable to reconnect automatically. Please reconnect manually.");
@@ -1511,7 +1330,6 @@ public class GameController {
             }
 
             isReconnecting = false;
-            debug("attemptReconnect: finished (reconnected=" + reconnected + ")");
         }).start();
     }
 
@@ -1519,7 +1337,6 @@ public class GameController {
      * Shows dialog for manual reconnect after automatic attempts failed
      */
     private void showReconnectDialog() {
-        debug("showReconnectDialog: displaying manual reconnect dialog");
         Alert alert = new Alert(Alert.AlertType.WARNING);
         alert.setTitle("Connection Lost");
         alert.setHeaderText("Lost connection to server");
@@ -1531,10 +1348,8 @@ public class GameController {
 
         Optional<ButtonType> result = alert.showAndWait();
         if (result.isPresent() && result.get() == reconnectButton) {
-            debug("showReconnectDialog: user chose to reconnect manually");
             attemptReconnect();
         } else {
-            debug("showReconnectDialog: user cancelled manual reconnect");
             // User cancelled - treat as manual disconnect
             manualDisconnect = true;
             Platform.runLater(() -> {
@@ -1550,47 +1365,37 @@ public class GameController {
     }
 
     private void stopMessageReceiver() {
-        debug("stopMessageReceiver() called");
         running = false;
 
         if (messageReceiverThread != null) {
-            debug("Interrupting message receiver thread");
             messageReceiverThread.interrupt();
         }
         if (messageProcessorThread != null) {
-            debug("Interrupting message processor thread");
             messageProcessorThread.interrupt();
         }
         if (waitForGameStartThread != null && waitForGameStartThread.isAlive()) {
-            debug("Interrupting waitForGameStart thread");
             waitForGameStartThread.interrupt();
         }
 
         try {
             if (messageReceiverThread != null) {
-                debug("Waiting for message receiver thread to join");
                 messageReceiverThread.join(2000);
             }
             if (messageProcessorThread != null) {
-                debug("Waiting for message processor thread to join");
                 messageProcessorThread.join(2000);
             }
             if (waitForGameStartThread != null) {
-                debug("Waiting for waitForGameStart thread to join");
                 waitForGameStartThread.join(2000);
             }
         } catch (InterruptedException e) {
-            debug("Interrupted while stopping message receiver");
             Thread.currentThread().interrupt();
         }
-        debug("Message receiver stopped");
     }
 
     private void handleMessage(ProtocolMessage msg) {
-        debug("handleMessage() called for: " + msg.getCommand());
+        Logger.info("Handling message: " + msg.toString());
         Platform.runLater(() -> {
             String cmd = msg.getCommand();
-            debug("handleMessage UI update for: " + cmd);
 
             switch (cmd) {
                 case "YOUR_TURN":
@@ -1611,7 +1416,6 @@ public class GameController {
 
                 case "PLAYER_DISCONNECTED":
                     String disconnectedPlayer = msg.getParameter(0);
-                    debug("PLAYER_DISCONNECTED received: " + disconnectedPlayer);
 
                     Platform.runLater(() -> {
                         // Reset game state completely and stay in room
@@ -1620,7 +1424,6 @@ public class GameController {
                             gameClient.setState(GameClient.ClientState.IN_ROOM);
                         }
 
-                        debug("PLAYER_DISCONNECTED - resetting UI, showing waitingForOpponentArea");
                         // Clear game display completely
                         yourCardsBox.getChildren().clear();
                         handValueLabel.setText("(Value: 0)");
@@ -1644,37 +1447,26 @@ public class GameController {
                                  "If they don't reconnect, a new opponent may join.");
 
                         // Start waiting for new game in a separate thread to avoid blocking
-                        debug("PLAYER_DISCONNECTED - starting waitForGameStart");
                         waitForGameStart();
                     });
                     break;
 
                 case "PLAYER_RECONNECTED":
                     String reconnectedPlayer = msg.getParameter(0);
-                    debug("PLAYER_RECONNECTED received: " + reconnectedPlayer);
                     Platform.runLater(() -> {
                         updateStatus("Opponent " + reconnectedPlayer + " has reconnected. Resuming game...");
                     });
                     break;
 
                 case "ERROR":
-                    debug("ERROR message received: " + msg.getErrorMessage());
                     showError("Server error: " + msg.getErrorMessage());
                     break;
 
                 case "GAME_STATE":
-                    debug("GAME_STATE received, updating game info");
                     updateGameInfo();
 
                     // Send ACK
-                    new Thread(() -> {
-                        ProtocolMessage ackMsg = ProtocolMessage.ackGameState();
-                        if (!gameClient.sendMessage(ackMsg)) {
-                            debug("Failed to send ACK_GAME_STATE");
-                        } else {
-                            debug("ACK_GAME_STATE sent");
-                        }
-                    }).start();
+                    new Thread(ProtocolMessage::ackGameState).start();
                     break;
 
                 case "DEAL_CARDS":
@@ -1692,10 +1484,8 @@ public class GameController {
                     }
 
                     // Store cards and update UI
-                    debug("DEAL_CARDS received");
                     gameClient.clearPlayerCards();
                     gameClient.clearOpponentCards();
-                    debug("DEAL_CARDS - dealing " + cardCount + " cards");
 
                     // VALIDATION: Validate each card format before adding
                     boolean allCardsValid = true;
@@ -1720,18 +1510,10 @@ public class GameController {
                     // Hide round results and show waiting area (will be hidden if YOUR_TURN arrives)
                     roundResultArea.setVisible(false);
                     waitingArea.setVisible(true);
-                    debug("DEAL_CARDS - waitingArea set to VISIBLE (will be hidden on YOUR_TURN)");
                     updateStatus("Cards dealt!");
 
                     // Send ACK
-                    new Thread(() -> {
-                        ProtocolMessage ackMsg = ProtocolMessage.ackDealCards();
-                        if (!gameClient.sendMessage(ackMsg)) {
-                            debug("Failed to send ACK_DEAL_CARDS");
-                        } else {
-                            debug("ACK_DEAL_CARDS sent");
-                        }
-                    }).start();
+                    new Thread(ProtocolMessage::ackDealCards).start();
                     break;
 
                 case "CARD":
@@ -1743,21 +1525,18 @@ public class GameController {
                     }
 
                     // Store card and update UI
-                    debug("CARD received: " + card);
                     gameClient.addPlayerCard(card);
                     updateYourCards();
                     updateStatus("Received a card");
                     break;
 
                 default:
-                    debug("Unknown message type: " + cmd);
                     break;
             }
         });
     }
 
     private void handleYourTurn(ProtocolMessage msg) {
-        debug("YOUR_TURN received - enabling buttons, hiding waitingArea");
         hitButton.setDisable(false);
         standButton.setDisable(false);
         waitingArea.setVisible(false);
@@ -1774,7 +1553,6 @@ public class GameController {
         }
 
         String data = msg.getParameter(1);
-        debug("OPPONENT_ACTION received: action=" + action + ", data=" + data);
 
         // Waiting area should already be visible from previous turn
         // But ensure it's shown and buttons are disabled
@@ -1784,23 +1562,19 @@ public class GameController {
 
         switch (action) {
             case "PLAYED_CARD":
-                debug("Opponent played card: " + data);
                 updateStatus("Opponent played: " + data);
                 break;
             case "HIT":
                 // Opponent drew a card, increment count and update display
-                debug("Opponent took a card");
                 gameClient.setOpponentCardCount(gameClient.getOpponentCardCount() + 1);
                 updateOpponentCardsWithBacks();
                 updateStatus("Opponent took a card");
                 break;
             case "STAND":
-                debug("Opponent stands");
                 updateStatus("Opponent stands");
                 waitingArea.setVisible(false);
                 break;
             case "BUSTED":
-                debug("Opponent busted");
                 updateStatus("Opponent busted!");
                 waitingArea.setVisible(false);
                 break;
@@ -1831,7 +1605,6 @@ public class GameController {
             return;
         }
 
-        debug("ROUND_END: winner=" + winner + ", yourTotal=" + yourTotal + ", opponentTotal=" + opponentTotal);
 
         // Uložit hodnoty do GameClient (ze serveru)
         gameClient.setPlayerHandValue(yourTotalInt);
@@ -1841,7 +1614,6 @@ public class GameController {
         if (msg.getParameterCount() >= 5) {
             String opponentCardsStr = msg.getParameter(4);
             if (opponentCardsStr != null && !opponentCardsStr.isEmpty()) {
-                debug("ROUND_END - revealing opponent cards: " + opponentCardsStr);
                 List<String> opponentCards = Arrays.asList(opponentCardsStr.split(","));
                 gameClient.setOpponentCards(opponentCards);
                 // Reveal opponent's cards
@@ -1864,7 +1636,6 @@ public class GameController {
                 break;
         }
 
-        debug("ROUND_END - showing result: " + titleText);
         roundResultTitle.setText(titleText);
         roundResultMessage.setText(message);
         roundResultArea.setVisible(true);
@@ -1876,14 +1647,7 @@ public class GameController {
         waitingArea.setVisible(false);
 
         // Send ACK
-        new Thread(() -> {
-            ProtocolMessage ackMsg = ProtocolMessage.ackRoundEnd();
-            if (!gameClient.sendMessage(ackMsg)) {
-                debug("Failed to send ACK_ROUND_END");
-            } else {
-                debug("ACK_ROUND_END sent");
-            }
-        }).start();
+        new Thread(ProtocolMessage::ackRoundEnd).start();
 
         // Result area will be hidden when DEAL_CARDS arrives (after server delay)
     }
@@ -1892,7 +1656,6 @@ public class GameController {
         String winner = msg.getParameter(0);
         String yourScore = msg.getParameter(1);
         String opponentScore = msg.getParameter(2);
-        debug("GAME_END: winner=" + winner + ", yourScore=" + yourScore + ", opponentScore=" + opponentScore);
 
         // Build result message
         String message = "Final Score: You " + yourScore + " - " + opponentScore + " Opponent";
@@ -1913,7 +1676,6 @@ public class GameController {
                 break;
         }
 
-        debug("GAME_END - showing result: " + titleText);
         // Show game result in same area as round results
         roundResultTitle.setText(titleText);
         roundResultMessage.setText(message);
@@ -1927,14 +1689,7 @@ public class GameController {
         updateStatus("Game ended. Returning to lobby...");
 
         // Send ACK
-        new Thread(() -> {
-            ProtocolMessage ackMsg = ProtocolMessage.ackGameEnd();
-            if (!gameClient.sendMessage(ackMsg)) {
-                debug("Failed to send ACK_GAME_END");
-            } else {
-                debug("ACK_GAME_END sent");
-            }
-        }).start();
+        new Thread(ProtocolMessage::ackGameEnd).start();
 
         // GAME_END will be handled by message processor for delay and cleanup
     }
@@ -2179,7 +1934,6 @@ public class GameController {
     }
 
     private void showLobby() {
-        debug("showLobby() called");
         lobbyPanel.setVisible(true);
         gamePanel.setVisible(false);
 
@@ -2189,7 +1943,6 @@ public class GameController {
     }
 
     private void showGame() {
-        debug("showGame() called");
         lobbyPanel.setVisible(false);
         gamePanel.setVisible(true);
         yourCardsBox.getChildren().clear();
@@ -2207,6 +1960,7 @@ public class GameController {
     }
 
     private void showError(String message) {
+        Logger.error(message);
         Alert alert = new Alert(Alert.AlertType.ERROR);
         alert.setTitle("Error");
         alert.setHeaderText(null);

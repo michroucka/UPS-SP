@@ -4,6 +4,7 @@ import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.regex.Pattern;
+import cz.zcu.kiv.ups.sp.Logger;
 
 /**
  * Utility class for validating protocol messages and their parameters.
@@ -54,7 +55,7 @@ public class MessageValidator {
      */
     public static boolean validateNotNull(String param, String paramName) {
         if (param == null) {
-            System.err.println("Validation error: " + paramName + " is null");
+            Logger.error("Validation error: " + paramName + " is null");
             return false;
         }
         return true;
@@ -68,7 +69,7 @@ public class MessageValidator {
      */
     public static boolean validateParameterCount(ProtocolMessage msg, int expectedCount) {
         if (msg.getParameterCount() < expectedCount) {
-            System.err.println("Validation error: Expected " + expectedCount + " parameters, got " + msg.getParameterCount());
+            Logger.error("Validation error: Expected " + expectedCount + " parameters, got " + msg.getParameterCount());
             return false;
         }
         return true;
@@ -90,12 +91,12 @@ public class MessageValidator {
         try {
             int value = Integer.parseInt(param);
             if (value < min || value > max) {
-                System.err.println("Validation error: " + paramName + " value " + value + " out of range [" + min + ", " + max + "]");
+                Logger.error("Validation error: " + paramName + " value " + value + " out of range [" + min + ", " + max + "]");
                 return null;
             }
             return value;
         } catch (NumberFormatException e) {
-            System.err.println("Validation error: " + paramName + " is not a valid integer: " + param);
+            Logger.error("Validation error: " + paramName + " is not a valid integer: " + param);
             return null;
         }
     }
@@ -153,7 +154,7 @@ public class MessageValidator {
         }
 
         if (!CARD_PATTERN.matcher(card).matches()) {
-            System.err.println("Validation error: Invalid card format: " + card);
+            Logger.error("Validation error: Invalid card format: " + card);
             return false;
         }
 
@@ -163,7 +164,7 @@ public class MessageValidator {
         }
 
         if (!VALID_SUITS.contains(parts[0]) || !VALID_RANKS.contains(parts[1])) {
-            System.err.println("Validation error: Invalid card suit or rank: " + card);
+            Logger.error("Validation error: Invalid card suit or rank: " + card);
             return false;
         }
 
@@ -179,7 +180,7 @@ public class MessageValidator {
         }
 
         if (!VALID_ROLES.contains(role)) {
-            System.err.println("Validation error: Invalid role: " + role);
+            Logger.error("Validation error: Invalid role: " + role);
             return false;
         }
 
@@ -195,7 +196,7 @@ public class MessageValidator {
         }
 
         if (!VALID_ACTIONS.contains(action)) {
-            System.err.println("Validation error: Invalid opponent action: " + action);
+            Logger.error("Validation error: Invalid opponent action: " + action);
             return false;
         }
 
@@ -211,7 +212,7 @@ public class MessageValidator {
         }
 
         if (!VALID_WINNERS.contains(winner)) {
-            System.err.println("Validation error: Invalid winner: " + winner);
+            Logger.error("Validation error: Invalid winner: " + winner);
             return false;
         }
 

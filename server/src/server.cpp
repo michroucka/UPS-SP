@@ -56,7 +56,6 @@ bool Server::createSocket() {
         LOG_WARNING("Unable to set SO_REUSEADDR: " + std::string(strerror(errno)));
     }
 
-    LOG_DEBUG("Socket created (fd: " + std::to_string(serverSocket) + ")");
     return true;
 }
 
@@ -79,7 +78,6 @@ bool Server::bindSocket() {
         return false;
     }
 
-    LOG_DEBUG("Socket bound on " + address + ":" + std::to_string(port));
     return true;
 }
 
@@ -92,7 +90,6 @@ bool Server::listenSocket() {
         return false;
     }
 
-    LOG_DEBUG("Socket is listening (backlog: 10)");
     return true;
 }
 
@@ -248,7 +245,6 @@ void Server::handleClientData(Client* client) {
     // Zpracování všech kompletních zpráv
     while (client->hasCompleteMessage()) {
         std::string message = client->extractMessage();
-        LOG_DEBUG("Received from " + client->getAddress() + ": " + message);
         processMessage(client, message);
 
         // Klient mohl být odpojen během zpracování
@@ -269,8 +265,6 @@ void Server::sendToClient(Client* client, const std::string& message) {
         disconnectClient(client, "Error while sending");
         return;
     }
-
-    LOG_DEBUG("Sent " + client->getAddress() + ": " + message.substr(0, message.length() - 1));
 }
 
 /**
@@ -279,23 +273,13 @@ void Server::sendToClient(Client* client, const std::string& message) {
 void Server::disconnectClient(Client* client, const std::string& reason) {
     LOG_INFO("Disconnecting " + client->getAddress() + " (" + client->getNickname() + "): " + reason);
 
-    // Log state for recovery
-    std::map<std::string, std::string> stateData = {
-        {"nickname", client->getNickname()},
-        {"reason", reason}
-    };
-
     // Odebrání z místnosti pokud v nějaké je
     Room* room = getRoomForClient(client);
     if (room) {
         int roomId = room->getId();
-        stateData["roomId"] = std::to_string(roomId);
 
         // Check if game was in progress
         bool gameInProgress = (room->getGame() != nullptr);
-        if (gameInProgress) {
-            stateData["gameInProgress"] = "true";
-        }
 
         // removePlayer with isDisconnect=true to preserve game state for reconnect
         room->removePlayer(client, true);
@@ -310,8 +294,6 @@ void Server::disconnectClient(Client* client, const std::string& reason) {
             LOG_INFO("Room " + std::to_string(roomId) + " is empty but is waiting for reconnect");
         }
     }
-
-    LOG_STATE("PLAYER_DISCONNECTED", stateData);
 
     // If player was in a game, save their info for reconnect
     if (room && room->getGame()) {
@@ -557,13 +539,6 @@ void Server::handleLogin(Client* client, const std::vector<std::string>& parts) 
                 // Remove from disconnected players
                 disconnectedPlayers.erase(disconnectedIt);
 
-                // Log state for recovery
-                std::map<std::string, std::string> reconnectData = {
-                    {"nickname", nickname},
-                    {"roomId", std::to_string(info.roomId)}
-                };
-                LOG_STATE("PLAYER_RECONNECT", reconnectData);
-
                 return;
             } else {
                 // Room doesn't exist anymore
@@ -637,14 +612,6 @@ void Server::handleLogin(Client* client, const std::vector<std::string>& parts) 
 
         client->queueMessage(Protocol::buildMessage({Protocol::CMD_OK, client->getSessionId()}));
         LOG_INFO("Client " + client->getAddress() + " logged in as " + nickname);
-
-        // Log state for recovery
-        std::map<std::string, std::string> loginData = {
-            {"nickname", nickname},
-            {"sessionId", client->getSessionId()},
-            {"address", client->getAddress()}
-        };
-        LOG_STATE("PLAYER_LOGIN", loginData);
     }
 }
 
@@ -694,7 +661,7 @@ void Server::handleCreateRoom(Client* client, const std::vector<std::string>& pa
         return;
     }
 
-    if (rooms.size() >= MAX_ROOMS) {
+    if (rooms.size() >= static_cast<size_t>(MAX_ROOMS)) {
         client->queueMessage(Protocol::buildMessage({Protocol::CMD_ERROR, "Too many rooms"}));
         return;
     }
@@ -711,14 +678,6 @@ void Server::handleCreateRoom(Client* client, const std::vector<std::string>& pa
 
     client->queueMessage(Protocol::buildMessage({Protocol::CMD_ROOM_CREATED, std::to_string(roomId)}));
     LOG_INFO("Room " + std::to_string(roomId) + " created");
-
-    // Log state for recovery
-    std::map<std::string, std::string> roomData = {
-        {"roomId", std::to_string(roomId)},
-        {"name", roomName},
-        {"creator", client->getNickname()}
-    };
-    LOG_STATE("ROOM_CREATED", roomData);
 }
 
 /**
@@ -945,28 +904,32 @@ Room* Server::getRoomForClient(Client* client) {
  * Zpracuje ACK_DEAL_CARDS zprávu.
  */
 void Server::handleAckDealCards(Client* client) {
-    LOG_DEBUG("ACK_DEAL_CARDS received from " + client->getNickname());
+    // ACK přijato, klient zpracoval DEAL_CARDS
+    (void)client;  // Potlačení warningů pro nepoužitý parametr
 }
 
 /**
  * Zpracuje ACK_ROUND_END zprávu.
  */
 void Server::handleAckRoundEnd(Client* client) {
-    LOG_DEBUG("ACK_ROUND_END received from " + client->getNickname());
+    // ACK přijato, klient zpracoval ROUND_END
+    (void)client;
 }
 
 /**
  * Zpracuje ACK_GAME_END zprávu.
  */
 void Server::handleAckGameEnd(Client* client) {
-    LOG_DEBUG("ACK_GAME_END received from " + client->getNickname());
+    // ACK přijato, klient zpracoval GAME_END
+    (void)client;
 }
 
 /**
  * Zpracuje ACK_GAME_STATE zprávu.
  */
 void Server::handleAckGameState(Client* client) {
-    LOG_DEBUG("ACK_GAME_STATE received from " + client->getNickname());
+    // ACK přijato, klient zpracoval GAME_STATE
+    (void)client;
 }
 
 /**
@@ -1101,13 +1064,6 @@ void Server::handleReconnectAccept(Client* client) {
 
     // Remove from disconnected players
     disconnectedPlayers.erase(disconnectedIt);
-
-    // Log state for recovery
-    std::map<std::string, std::string> reconnectData = {
-        {"nickname", nickname},
-        {"roomId", std::to_string(info.roomId)}
-    };
-    LOG_STATE("PLAYER_RECONNECT", reconnectData);
 }
 
 /**
@@ -1172,15 +1128,6 @@ void Server::handleReconnectDecline(Client* client) {
 
     client->queueMessage(Protocol::buildMessage({Protocol::CMD_OK, client->getSessionId()}));
     LOG_INFO("Client " + client->getAddress() + " fresh login as " + nickname + " after declining reconnect");
-
-    // Log state
-    std::map<std::string, std::string> loginData = {
-        {"nickname", nickname},
-        {"sessionId", client->getSessionId()},
-        {"address", client->getAddress()},
-        {"reconnectDeclined", "true"}
-    };
-    LOG_STATE("PLAYER_LOGIN", loginData);
 }
 
 /**
