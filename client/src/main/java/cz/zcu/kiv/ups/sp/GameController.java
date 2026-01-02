@@ -189,198 +189,32 @@ public class GameController {
                     Platform.runLater(() -> updateStatus("Logging in as " + nickname + "..."));
 
                     if (gameClient.login(nickname)) {
-
-                        // Check if server sent RECONNECT_QUERY
+                        // After login, immediately check if a reconnect is pending.
+                        // The login method synchronously waits for the first response, which could be RECONNECT_QUERY.
                         if (gameClient.hasPendingReconnectQuery()) {
-
-                            String opponentName = gameClient.getReconnectOpponentNickname();
-
-                            // Show dialog on UI thread and wait for user decision
-                            boolean[] userChoice = new boolean[1];
-                            CountDownLatch dialogLatch = new CountDownLatch(1);
+                            // --- RECONNECT LOGIC ---
+                            // This path handles the case where the user was in a game and re-connected.
+                            handlePendingReconnect();
+                        } else {
+                            // --- NORMAL LOGIN LOGIC ---
+                            // This path handles a fresh login where no game was in progress.
+                            // Start heartbeat and message receiver only after the initial handshake is confirmed to be a normal one.
+                            gameClient.getNetworkClient().startHeartbeat(() -> Platform.runLater(this::handleServerUnavailable));
+                            startMessageReceiver();
+                            startMessageProcessor();
 
                             Platform.runLater(() -> {
-                                Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
-                                alert.setTitle("Reconnect to Game");
-                                alert.setHeaderText("You were disconnected from a game");
-                                alert.setContentText("You were playing against " + opponentName + ".\n\nDo you want to reconnect and continue the game?");
-
-                                ButtonType yesButton = new ButtonType("Yes", ButtonBar.ButtonData.YES);
-                                ButtonType noButton = new ButtonType("No", ButtonBar.ButtonData.NO);
-                                alert.getButtonTypes().setAll(yesButton, noButton);
-
-                                Optional<ButtonType> result = alert.showAndWait();
-                                userChoice[0] = result.isPresent() && result.get() == yesButton;
-                                dialogLatch.countDown();
+                                connectionStatus.setText("Connected");
+                                connectionStatus.setStyle("-fx-text-fill: #4CAF50; -fx-font-weight: bold;");
+                                connectButton.setDisable(true);
+                                disconnectButton.setDisable(false);
+                                serverHostField.setDisable(true);
+                                serverPortField.setDisable(true);
+                                nicknameField.setDisable(true);
+                                updateStatus("Connected as " + nickname);
+                                showLobby(); // Show the lobby for a fresh login
                             });
-
-                            // Wait for user decision
-                            try {
-                                dialogLatch.await();
-                            } catch (InterruptedException e) {
-                                return;
-                            }
-
-                            boolean reconnectAccepted = userChoice[0];
-
-                            boolean reconnectResult;
-                            if (reconnectAccepted) {
-                                reconnectResult = gameClient.acceptReconnect();
-                            } else {
-                                reconnectResult = gameClient.declineReconnect();
-                            }
-
-                            if (!reconnectResult) {
-                                Platform.runLater(() -> {
-                                    showError("Failed to process reconnect response");
-                                    updateStatus("Reconnect failed");
-                                    gameClient = null;
-                                });
-                                return;
-                            }
-
-                            // Continue based on user choice
-                            if (reconnectAccepted) {
-
-                                // Start heartbeat and message receiver
-                                gameClient.getNetworkClient().startHeartbeat(() -> {
-                                    Platform.runLater(this::handleServerUnavailable);
-                                });
-
-                                startMessageReceiver();
-
-                                Platform.runLater(() -> {
-                                    connectionStatus.setText("Connected");
-                                    connectionStatus.setStyle("-fx-text-fill: #4CAF50; -fx-font-weight: bold;");
-                                    connectButton.setDisable(true);
-                                    disconnectButton.setDisable(false);
-                                    serverHostField.setDisable(true);
-                                    serverPortField.setDisable(true);
-                                    nicknameField.setDisable(true);
-                                    updateStatus("Reconnecting to game...");
-
-                                    // Show game panel
-                                    lobbyPanel.setVisible(false);
-                                    gamePanel.setVisible(true);
-                                });
-
-                                // Start message processor to handle incoming game state
-                                startMessageProcessor();
-
-                                // Wait for game state messages (GAME_START, GAME_STATE, etc.)
-                                // This will process GAME_START and restore state
-                                Platform.runLater(this::waitForGameStart);
-
-                                return;  // Exit early - reconnect flow complete
-                            }
                         }
-
-
-                        // Start heartbeat to detect server unavailability
-                        gameClient.getNetworkClient().startHeartbeat(() -> {
-                            Platform.runLater(this::handleServerUnavailable);
-                        });
-
-                        // Start message receiver immediately after login!
-                        startMessageReceiver();
-
-                        Platform.runLater(() -> {
-                            connectionStatus.setText("Connected");
-                            connectionStatus.setStyle("-fx-text-fill: #4CAF50; -fx-font-weight: bold;");
-                            connectButton.setDisable(true);
-                            disconnectButton.setDisable(false);
-                            serverHostField.setDisable(true);
-                            serverPortField.setDisable(true);
-                            nicknameField.setDisable(true);
-                            updateStatus("Connected as " + nickname);
-                        });
-
-                        // Wait briefly for reconnect messages (GAME_START) from server
-                        // If GAME_START arrives, it's a reconnect and we won't show lobby
-                        // If nothing arrives within timeout, show lobby (normal login)
-                        new Thread(() -> {
-                            try {
-                                // Wait for potential messages indicating reconnect
-                                Thread.sleep(500);
-
-                                // Check sync queue for GAME_START
-                                ProtocolMessage gameStart = syncResponseQueue.poll();
-
-                                // Check async queue for PLAYER_DISCONNECTED (means reconnect but opponent disconnected)
-                                ProtocolMessage playerDisconnected = asyncMessageQueue.poll();
-
-                                if (gameStart != null && gameStart.getCommand().equals("GAME_START")) {
-                                    syncResponseQueue.offer(gameStart);
-
-                                    // Start message processor now
-                                    startMessageProcessor();
-
-                                    Platform.runLater(() -> {
-                                        lobbyPanel.setVisible(false);
-                                        gamePanel.setVisible(true);
-                                        waitForGameStart();
-                                    });
-
-                                    // Put back PLAYER_DISCONNECTED if found
-                                    if (playerDisconnected != null) {
-                                        asyncMessageQueue.offer(playerDisconnected);
-                                    }
-                                    return;
-                                }
-
-                                if (playerDisconnected != null && playerDisconnected.getCommand().equals("PLAYER_DISCONNECTED")) {
-                                    asyncMessageQueue.offer(playerDisconnected);
-
-                                    // Start message processor now
-                                    startMessageProcessor();
-
-                                    Platform.runLater(() -> {
-                                        lobbyPanel.setVisible(false);
-                                        gamePanel.setVisible(true);
-                                        // PLAYER_DISCONNECTED handler will show waitingForOpponentArea
-                                    });
-                                    return;
-                                }
-
-                                // Put back any messages we took
-                                if (gameStart != null) {
-                                    syncResponseQueue.offer(gameStart);
-                                }
-                                if (playerDisconnected != null) {
-                                    asyncMessageQueue.offer(playerDisconnected);
-                                }
-
-                                // No reconnect - this is normal login, show lobby
-
-                                // Reset game client state (important after server restart)
-                                boolean wasInGame = false;
-                                if (gameClient != null) {
-                                    wasInGame = (gameClient.getState() == GameClient.ClientState.IN_ROOM
-                                              || gameClient.getState() == GameClient.ClientState.PLAYING);
-                                    gameClient.resetGameState();
-                                    gameClient.setState(GameClient.ClientState.LOBBY);
-                                    gameClient.setCurrentRoomId(null);
-                                }
-
-                                // Start message processor now
-                                startMessageProcessor();
-
-                                final boolean showServerRestartMessage = wasInGame;
-                                Platform.runLater(() -> {
-                                    resetGameUI();  // Reset UI to clean state
-                                    showLobby();
-
-                                    // Inform user if they were in a game (server likely restarted)
-                                    if (showServerRestartMessage) {
-                                        showAlert("Server Restarted",
-                                                 "The server has restarted.\n\n" +
-                                                 "Your previous game has been terminated.\n" +
-                                                 "You have been returned to the lobby.");
-                                    }
-                                });
-                            } catch (InterruptedException ignored) {
-                            }
-                        }).start();
                     } else {
                         Platform.runLater(() -> {
                             showError("Login failed. Nickname may already be in use or server rejected the connection.");
@@ -404,6 +238,93 @@ public class GameController {
                 });
             }
         }).start();
+    }
+
+    private void handlePendingReconnect() {
+        String opponentName = gameClient.getReconnectOpponentNickname();
+
+        // Show dialog on UI thread and wait for user decision
+        boolean[] userChoice = new boolean[1];
+        CountDownLatch dialogLatch = new CountDownLatch(1);
+
+        Platform.runLater(() -> {
+            Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
+            alert.setTitle("Reconnect to Game");
+            alert.setHeaderText("You were disconnected from a game");
+            alert.setContentText("You were playing against " + opponentName + ".\n\nDo you want to reconnect and continue the game?");
+
+            ButtonType yesButton = new ButtonType("Yes", ButtonBar.ButtonData.YES);
+            ButtonType noButton = new ButtonType("No", ButtonBar.ButtonData.NO);
+            alert.getButtonTypes().setAll(yesButton, noButton);
+
+            Optional<ButtonType> result = alert.showAndWait();
+            userChoice[0] = result.isPresent() && result.get() == yesButton;
+            dialogLatch.countDown();
+        });
+
+        // Wait for user decision
+        try {
+            dialogLatch.await();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return;
+        }
+
+        boolean reconnectAccepted = userChoice[0];
+
+        boolean reconnectResult;
+        if (reconnectAccepted) {
+            reconnectResult = gameClient.acceptReconnect();
+        } else {
+            reconnectResult = gameClient.declineReconnect();
+        }
+
+        if (!reconnectResult) {
+            Platform.runLater(() -> {
+                showError("Failed to process reconnect response");
+                updateStatus("Reconnect failed");
+                gameClient = null;
+            });
+            return;
+        }
+
+        // Start heartbeat and message receiver now that the initial handshake is complete
+        gameClient.getNetworkClient().startHeartbeat(() -> Platform.runLater(this::handleServerUnavailable));
+        startMessageReceiver();
+        startMessageProcessor();
+
+
+        if (reconnectAccepted) {
+            // --- REJOIN GAME ---
+            Platform.runLater(() -> {
+                connectionStatus.setText("Connected");
+                connectionStatus.setStyle("-fx-text-fill: #4CAF50; -fx-font-weight: bold;");
+                connectButton.setDisable(true);
+                disconnectButton.setDisable(false);
+                serverHostField.setDisable(true);
+                serverPortField.setDisable(true);
+                nicknameField.setDisable(true);
+                updateStatus("Reconnecting to game...");
+
+                // Show game panel and wait for game state
+                lobbyPanel.setVisible(false);
+                gamePanel.setVisible(true);
+                waitForGameStart();
+            });
+        } else {
+            // --- DECLINED - GO TO LOBBY ---
+            Platform.runLater(() -> {
+                connectionStatus.setText("Connected");
+                connectionStatus.setStyle("-fx-text-fill: #4CAF50; -fx-font-weight: bold;");
+                connectButton.setDisable(true);
+                disconnectButton.setDisable(false);
+                serverHostField.setDisable(true);
+                serverPortField.setDisable(true);
+                nicknameField.setDisable(true);
+                updateStatus("Connected as " + lastNickname);
+                showLobby();
+            });
+        }
     }
 
     @FXML
@@ -1227,92 +1148,7 @@ public class GameController {
                             Platform.runLater(this::handleServerUnavailable);
                         });
 
-                        // Wait for server to restore state (reconnect detection)
 
-                        // Same reconnect detection as after initial login
-                        new Thread(() -> {
-                            try {
-                                // Wait for potential messages indicating reconnect
-                                Thread.sleep(500);
-
-                                // Check sync queue for GAME_START
-                                ProtocolMessage gameStart = syncResponseQueue.poll();
-
-                                // Check async queue for PLAYER_DISCONNECTED (means reconnect but opponent disconnected)
-                                ProtocolMessage playerDisconnected = asyncMessageQueue.poll();
-
-                                if (gameStart != null && gameStart.getCommand().equals("GAME_START")) {
-                                    syncResponseQueue.offer(gameStart);
-
-                                    // Start message processor now
-                                    startMessageProcessor();
-
-                                    Platform.runLater(() -> {
-                                        lobbyPanel.setVisible(false);
-                                        gamePanel.setVisible(true);
-                                        waitForGameStart();
-                                    });
-
-                                    // Put back PLAYER_DISCONNECTED if found
-                                    if (playerDisconnected != null) {
-                                        asyncMessageQueue.offer(playerDisconnected);
-                                    }
-                                    return;
-                                }
-
-                                if (playerDisconnected != null && playerDisconnected.getCommand().equals("PLAYER_DISCONNECTED")) {
-                                    asyncMessageQueue.offer(playerDisconnected);
-
-                                    // Start message processor now
-                                    startMessageProcessor();
-
-                                    Platform.runLater(() -> {
-                                        lobbyPanel.setVisible(false);
-                                        gamePanel.setVisible(true);
-                                        // PLAYER_DISCONNECTED handler will show waitingForOpponentArea
-                                    });
-                                    return;
-                                }
-
-                                // Put back any messages we took
-                                if (gameStart != null) {
-                                    syncResponseQueue.offer(gameStart);
-                                }
-                                if (playerDisconnected != null) {
-                                    asyncMessageQueue.offer(playerDisconnected);
-                                }
-
-                                // No reconnect - server restarted, reset state and show lobby
-
-                                // Reset game client state (server restarted)
-                                boolean wasInGame = false;
-                                if (gameClient != null) {
-                                    wasInGame = (gameClient.getState() == GameClient.ClientState.IN_ROOM
-                                              || gameClient.getState() == GameClient.ClientState.PLAYING);
-                                    gameClient.resetGameState();
-                                    gameClient.setState(GameClient.ClientState.LOBBY);
-                                    gameClient.setCurrentRoomId(null);
-                                }
-
-                                // Start message processor now
-                                startMessageProcessor();
-
-                                final boolean showServerRestartMessage = wasInGame;
-                                Platform.runLater(() -> {
-                                    resetGameUI();
-                                    showLobby();
-
-                                    // Inform user if they were in a game (server restarted)
-                                    if (showServerRestartMessage) {
-                                        showAlert("Server Restarted",
-                                                 "The server has restarted.\n\n" +
-                                                 "Your previous game has been terminated.\n" +
-                                                 "You have been returned to the lobby.");
-                                    }
-                                });
-                            } catch (InterruptedException ignored) {
-                            }
-                        }).start();
                     }
                 }
             }
