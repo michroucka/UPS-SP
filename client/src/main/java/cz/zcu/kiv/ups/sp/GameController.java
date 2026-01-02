@@ -1203,7 +1203,6 @@ public class GameController {
             || cmd.equals("DEAL_CARDS")
             || cmd.equals("GAME_STATE")
             || cmd.equals("CARD");
-            // ERROR is NOT async - it's a sync response to failed commands
     }
 
     /**

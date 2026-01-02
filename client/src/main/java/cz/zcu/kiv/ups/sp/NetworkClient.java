@@ -20,7 +20,8 @@ public class NetworkClient {
     private volatile boolean heartbeatRunning = false;
     private Thread heartbeatThread;
     private static final int HEARTBEAT_INTERVAL_MS = 5000;   // 5 seconds
-    private static final int HEARTBEAT_TIMEOUT_MS = 3000;    // 3 seconds timeout
+    private static final int HEARTBEAT_TIMEOUT_MS = 8000;   // 8 seconds - if no message received, connection is dead
+    private volatile long lastMessageReceivedTime = 0;
 
     /**
      * Creates a new network client
@@ -49,6 +50,7 @@ public class NetworkClient {
                 true
             );
             connected = true;
+            lastMessageReceivedTime = System.currentTimeMillis();  // Initialize timestamp
             return true;
         } catch (IOException e) {
             System.err.println("Failed to connect to server: " + e.getMessage());
@@ -95,6 +97,8 @@ public class NetworkClient {
                 connected = false;
                 return null;
             }
+            // Update last message received timestamp
+            lastMessageReceivedTime = System.currentTimeMillis();
             return line;
         } catch (SocketTimeoutException e) {
             // Timeout is normal - just return null
@@ -137,29 +141,24 @@ public class NetworkClient {
 
         heartbeatRunning = true;
         heartbeatThread = new Thread(() -> {
-            int consecutiveFailures = 0;
             while (heartbeatRunning && connected) {
                 try {
                     Thread.sleep(HEARTBEAT_INTERVAL_MS);
 
                     if (!connected) break;
 
-                    // Send PING to test connection
-                    // Note: We don't read PONG here because message receiver thread handles all incoming messages
-                    // If send fails, connection is lost
-                    if (!send("PING")) {
-                        consecutiveFailures++;
-                        System.err.println("Heartbeat: Failed to send PING (failure " + consecutiveFailures + ")");
+                    // Send PING to keep connection alive and trigger PONG response
+                    send("PING");
 
-                        // After 2 consecutive failures, consider connection lost
-                        if (consecutiveFailures >= 2) {
-                            System.err.println("Heartbeat: Connection lost after " + consecutiveFailures + " failures");
-                            onConnectionLost.run();
-                            break;
-                        }
-                    } else {
-                        // PING sent successfully, reset failure counter
-                        consecutiveFailures = 0;
+                    // Check if we've received ANY message recently
+                    long timeSinceLastMessage = System.currentTimeMillis() - lastMessageReceivedTime;
+
+                    if (timeSinceLastMessage > HEARTBEAT_TIMEOUT_MS) {
+                        // No message received for too long - connection is dead
+                        System.err.println("Heartbeat: No message received for " + timeSinceLastMessage + "ms (timeout: " + HEARTBEAT_TIMEOUT_MS + "ms)");
+                        System.err.println("Heartbeat: Connection lost - triggering reconnect");
+                        onConnectionLost.run();
+                        break;
                     }
 
                 } catch (InterruptedException e) {
