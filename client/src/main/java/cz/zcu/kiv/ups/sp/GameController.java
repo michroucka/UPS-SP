@@ -1382,6 +1382,10 @@ public class GameController {
                             connectionStatus.setStyle("-fx-text-fill: #4CAF50; -fx-font-weight: bold;");
                         });
 
+                        // Stop message receiver and processor first (to prevent them from consuming reconnect messages)
+                        debug("attemptReconnect: stopping message receiver/processor before reconnect detection");
+                        stopMessageReceiver();
+
                         // Restart message receiver
                         debug("attemptReconnect: restarting message receiver");
                         startMessageReceiver();
