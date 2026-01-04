@@ -19,10 +19,8 @@ Game::~Game() {
 void Game::addPlayer(Client* client) {
     if (!player1) {
         player1 = new Player(client);
-        LOG_INFO("Player " + client->getNickname() + " added to game " + std::to_string(gameId) + " as player 1");
     } else if (!player2) {
         player2 = new Player(client);
-        LOG_INFO("Player " + client->getNickname() + " added to game " + std::to_string(gameId) + " as player 2");
     }
 }
 
@@ -70,7 +68,6 @@ void Game::start() {
     // Kontrola double ace pro PLAYER
     if (playerRole->hasDoubleAce()) {
         playerRole->standing = true;
-        LOG_INFO("Player " + playerRole->client->getNickname() + " (PLAYER) has 2 aces - stands by default");
 
         // Poslat YOUR_TURN aby klient věděl, že má čekat
         notifyYourTurn(playerRole);
@@ -94,7 +91,6 @@ void Game::start() {
         // Kontrola double ace pro BANKER
         if (bankerRole->hasDoubleAce()) {
             bankerRole->standing = true;
-            LOG_INFO("Player " + bankerRole->client->getNickname() + " (BANKER) has 2 aces - stands by default");
 
             notifyYourTurn(bankerRole);
 
@@ -125,8 +121,6 @@ void Game::dealInitialCards() {
     }
     notifyDealCards(playerRole);
     notifyDealCards(bankerRole);
-
-    LOG_INFO("Cards dealt for round " + std::to_string(currentRound));
 }
 
 void Game::playerHit(Client* client) {
@@ -161,8 +155,6 @@ void Game::playerHit(Client* client) {
     // Přidat kartu
     Card card = deck.draw();
     player->hand.push_back(card);
-
-    LOG_INFO("Player " + client->getNickname() + " drew card: " + card.toString());
 
     // Poslat kartu hráči
     client->queueMessage(Protocol::buildMessage({Protocol::CMD_CARD, card.toString()}));
@@ -223,8 +215,6 @@ void Game::playerStand(Client* client) {
     player->standing = true;
     client->queueMessage(Protocol::buildMessage({ Protocol::CMD_OK }));
 
-    LOG_INFO("Player " + client->getNickname() + " is standing with value " + std::to_string(player->getHandValue()));
-
     // Oznámit protihráči
     Player* opponent = getOpponent(client);
     if (opponent) {
@@ -241,7 +231,6 @@ void Game::playerStand(Client* client) {
 
         if (bankerRole->hasDoubleAce()) {
             bankerRole->standing = true;
-            LOG_INFO("Player " + bankerRole->client->getNickname() + " (BANKER) has 2 aces - stands by default");
 
             // Poslat YOUR_TURN aby klient věděl, že je nové kolo
             notifyYourTurn(bankerRole);
@@ -348,8 +337,6 @@ void Game::endRound() {
         currentRound++;
         player1IsBanker = !player1IsBanker;  // Swap roles!
 
-        LOG_INFO("New round " + std::to_string(currentRound) + " - roles switched");
-
         // Reset hráčů
         player1->reset();
         player2->reset();
@@ -368,7 +355,6 @@ void Game::endRound() {
         // Kontrola double ace pro PLAYER
         if (playerRole->hasDoubleAce()) {
             playerRole->standing = true;
-            LOG_INFO("Player " + playerRole->client->getNickname() + " (PLAYER) has 2 aces - stands by default");
 
             // Poslat YOUR_TURN aby klient věděl, že je nové kolo
             notifyYourTurn(playerRole);
@@ -392,7 +378,6 @@ void Game::endRound() {
             // Kontrola double ace pro BANKER
             if (bankerRole->hasDoubleAce()) {
                 bankerRole->standing = true;
-                LOG_INFO("Player " + bankerRole->client->getNickname() + " (BANKER) has 2 aces - stands by default");
 
                 notifyYourTurn(bankerRole);
 
@@ -445,7 +430,6 @@ void Game::endGame() {
     state = GAME_ENDED;
 
     // Stav hráčů bude aktualizován v Room::checkAndHandleGameEnd()
-    LOG_INFO("Game " + std::to_string(gameId) + " ended - waiting for room cleanup");
 }
 
 bool Game::isPlayerTurn(Client* client) const {

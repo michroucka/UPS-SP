@@ -156,8 +156,7 @@ public class NetworkClient {
 
                     if (timeSinceLastMessage > HEARTBEAT_TIMEOUT_MS) {
                         // No message received for too long - connection is dead
-                        Logger.error("Heartbeat: No message received for " + timeSinceLastMessage + "ms (timeout: " + HEARTBEAT_TIMEOUT_MS + "ms)");
-                        Logger.error("Heartbeat: Connection lost - triggering reconnect");
+                        Logger.error("Connection lost - no response from server");
                         onConnectionLost.run();
                         break;
                     }

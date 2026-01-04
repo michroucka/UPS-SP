@@ -47,8 +47,6 @@ bool Room::addPlayer(Client* client) {
     client->setRoomId(id);
     client->setState(Protocol::IN_ROOM);
 
-    LOG_INFO("Player " + client->getNickname() + " added to room " + std::to_string(id));
-
     // Pokud je místnost plná, spustit hru
     if (isFull()) {
         startGame();
@@ -99,7 +97,6 @@ void Room::removePlayer(Client* client, bool isDisconnect) {
 
             // Změnit stav místnosti zpět na WAITING
             state = ROOM_WAITING;
-            LOG_INFO("Room " + std::to_string(id) + " returned to state WAITING after player left during ongoing game");
         }
     }
 
@@ -109,7 +106,6 @@ void Room::removePlayer(Client* client, bool isDisconnect) {
             players.erase(it);
             client->setRoomId(-1);
             client->setState(Protocol::LOBBY);
-            LOG_INFO("Player " + leavingPlayerName + " removed from room " + std::to_string(id));
             break;
         }
     }
@@ -125,7 +121,6 @@ void Room::reconnectPlayer(Client* client) {
 
     // Notify other players about reconnect
     // (They will see game resume when reconnected player takes action)
-    LOG_INFO("Other players will be informed of reconnect of player " + client->getNickname());
 }
 
 void Room::startGame() {
@@ -156,7 +151,6 @@ void Room::resetGame() {
     }
 
     state = ROOM_WAITING;
-    LOG_INFO("Room " + std::to_string(id) + " game reset, state set to WAITING");
 }
 
 void Room::checkAndHandleGameEnd() {
@@ -174,12 +168,9 @@ void Room::checkAndHandleGameEnd() {
         for (Client* player : players) {
             player->setRoomId(-1);
             player->setState(Protocol::LOBBY);
-            LOG_INFO("Player " + player->getNickname() + " returned to lobby after game ended");
         }
 
         // Vyčistit seznam hráčů
         players.clear();
-
-        LOG_INFO("Room " + std::to_string(id) + " ready for deletion");
     }
 }

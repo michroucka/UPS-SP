@@ -45,7 +45,7 @@ public class Logger {
             if (logFile != null) {
                 logFile.close();
             }
-            logFile = new PrintWriter(new FileWriter(filename, true));
+            logFile = new PrintWriter(new FileWriter(filename, false));
         } catch (IOException e) {
             log(Level.ERROR,"Unable to open log file: " + filename);
         }

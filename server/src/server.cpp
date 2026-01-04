@@ -293,15 +293,11 @@ void Server::disconnectClient(Client* client, const std::string& reason) {
 
         // removePlayer with isDisconnect=true to preserve game state for reconnect
         room->removePlayer(client, true);
-        LOG_INFO("Client removed from room " + std::to_string(roomId));
 
         // Pokud je místnost prázdná, smazat ji
         // Note: Don't delete room if game was in progress - wait for reconnect
         if (room->getPlayerCount() == 0 && !gameInProgress) {
             rooms.erase(roomId);
-            LOG_INFO("Room " + std::to_string(roomId) + " deleted (empty)");
-        } else if (room->getPlayerCount() == 0 && gameInProgress) {
-            LOG_INFO("Room " + std::to_string(roomId) + " is empty but is waiting for reconnect");
         }
     }
 
@@ -312,7 +308,6 @@ void Server::disconnectClient(Client* client, const std::string& reason) {
         info.sessionId = client->getSessionId();
         info.disconnectTime = time(nullptr);
         disconnectedPlayers[client->getNickname()] = info;
-        LOG_INFO("Player " + client->getNickname() + " saved for reconnect (roomId=" + std::to_string(info.roomId) + ")");
 
         // DON'T remove from activeNicknames - we want to prevent someone else from taking this nickname
         // while the player might reconnect
@@ -424,11 +419,9 @@ void Server::handleLogin(Client* client, const std::vector<std::string>& parts) 
                 activeNicknames.erase(nickname);
                 int socket = client->getSocket();
                 clients.erase(socket);
-                LOG_INFO("Cleaned up failed reconnect attempt for " + nickname);
                 return;
             }
 
-            LOG_INFO("Player " + nickname + " reconnecting with valid session ID (roomId=" + std::to_string(info.roomId) + ")");
 
             // Restore player info
             client->setNickname(nickname);
@@ -442,7 +435,6 @@ void Server::handleLogin(Client* client, const std::vector<std::string>& parts) 
                 // Reconnect player to room
                 room->reconnectPlayer(client);
 
-                LOG_INFO("Player " + nickname + " returned to room " + std::to_string(info.roomId));
 
                 // Send OK with session ID
                 client->queueMessage(Protocol::buildMessage({Protocol::CMD_OK, client->getSessionId()}));
@@ -455,7 +447,6 @@ void Server::handleLogin(Client* client, const std::vector<std::string>& parts) 
                     if (reconnectedPlayer) {
                         // Update the client pointer to the new connection
                         reconnectedPlayer->client = client;
-                        LOG_INFO("Updated client pointer for player " + nickname);
                     }
 
                     // Now get the opponent (this will work correctly since we updated the client pointer)
@@ -469,7 +460,6 @@ void Server::handleLogin(Client* client, const std::vector<std::string>& parts) 
                         if (opponentIsDisconnected) {
                             // Opponent is still disconnected - inform reconnected player
                             // DON'T send GAME_START yet - wait until both players are connected
-                            LOG_INFO("Player " + nickname + " reconnected, but opponent " + opponentNickname + " is still disconnected");
 
                             client->queueMessage(Protocol::buildMessage({
                                 Protocol::CMD_PLAYER_DISCONNECTED,
@@ -479,7 +469,6 @@ void Server::handleLogin(Client* client, const std::vector<std::string>& parts) 
                             // Don't send GAME_START or game state - player should wait for opponent
                         } else {
                             // Opponent is connected - NOW send GAME_START to both players
-                            LOG_INFO("Player " + nickname + " reconnected, opponent " + opponentNickname + " is connected");
 
                             std::string role = game->getPlayerRole(client);
                             std::string opponentRole = game->getPlayerRole(opponent->client);
@@ -543,7 +532,6 @@ void Server::handleLogin(Client* client, const std::vector<std::string>& parts) 
                         }
                     }
 
-                    LOG_INFO("Reconnected player - sent game state to both players");
                 }
 
                 // Remove from disconnected players
@@ -566,14 +554,12 @@ void Server::handleLogin(Client* client, const std::vector<std::string>& parts) 
                 // Clean up - close connection after sending error
                 int socket = client->getSocket();
                 clients.erase(socket);
-                LOG_INFO("Cleaned up expired session for " + nickname);
                 return;
             }
         } else {
             // No session ID provided but player is in disconnected list
             // This is a reconnect situation (client restarted, lost session ID)
             // Send RECONNECT_QUERY to ask user if they want to reconnect
-            LOG_INFO("Player " + nickname + " in disconnected list without session ID - sending reconnect prompt");
 
             int roomId = info.roomId;
 
@@ -603,7 +589,6 @@ void Server::handleLogin(Client* client, const std::vector<std::string>& parts) 
                 opponentNickname
             }));
 
-            LOG_INFO("Sent RECONNECT_QUERY to " + nickname + " for room " + std::to_string(roomId));
             return;
         }
     } else {
@@ -700,7 +685,6 @@ void Server::handleCreateRoom(Client* client, const std::vector<std::string>& pa
     rooms[roomId] = std::move(room);
 
     client->queueMessage(Protocol::buildMessage({Protocol::CMD_ROOM_CREATED, std::to_string(roomId)}));
-    LOG_INFO("Room " + std::to_string(roomId) + " created");
 
     // Log state for recovery
     std::map<std::string, std::string> roomData = {
@@ -778,7 +762,6 @@ void Server::handleLeaveRoom(Client* client) {
     // This is intentional leave, not disconnect - use isDisconnect=false
     room->removePlayer(client, false);
     client->queueMessage(Protocol::buildMessage({Protocol::CMD_OK}));
-    LOG_INFO("Client " + client->getNickname() + " left room");
 
     // If game was in progress and this player left intentionally,
     // clean up any disconnected players from this room
@@ -792,7 +775,6 @@ void Server::handleLeaveRoom(Client* client) {
         }
 
         for (const std::string& nickname : toRemove) {
-            LOG_INFO("Removing disconnected player " + nickname + " from disconnectedPlayers (room " + std::to_string(roomId) + " left)");
             disconnectedPlayers.erase(nickname);
             // Free up the nickname so someone else can use it
             activeNicknames.erase(nickname);
@@ -802,7 +784,6 @@ void Server::handleLeaveRoom(Client* client) {
     // Always delete room if it's now empty (regardless of whether game was in progress)
     auto roomIt = rooms.find(roomId);
     if (roomIt != rooms.end() && roomIt->second->getPlayerCount() == 0) {
-        LOG_INFO("Deleting empty room " + std::to_string(roomId) + " after last player left");
         rooms.erase(roomIt);
     }
 }
@@ -831,7 +812,6 @@ void Server::handleHit(Client* client) {
     if (room->getState() == ROOM_FINISHED && room->getPlayerCount() == 0) {
         int roomId = room->getId();
         rooms.erase(roomId);
-        LOG_INFO("Room " + std::to_string(roomId) + " deleted after game ended");
     }
 }
 
@@ -859,7 +839,6 @@ void Server::handleStand(Client* client) {
     if (room->getState() == ROOM_FINISHED && room->getPlayerCount() == 0) {
         int roomId = room->getId();
         rooms.erase(roomId);
-        LOG_INFO("Room " + std::to_string(roomId) + " deleted after game ended");
     }
 }
 
@@ -997,7 +976,6 @@ void Server::handleReconnectAccept(Client* client) {
     // Reconnect player to room
     room->reconnectPlayer(client);
 
-    LOG_INFO("Player " + nickname + " returned to room " + std::to_string(info.roomId));
 
     // Send OK with session ID
     client->queueMessage(Protocol::buildMessage({Protocol::CMD_OK, client->getSessionId()}));
@@ -1009,7 +987,6 @@ void Server::handleReconnectAccept(Client* client) {
         Player* reconnectedPlayer = game->getPlayerByNickname(nickname);
         if (reconnectedPlayer) {
             reconnectedPlayer->client = client;
-            LOG_INFO("Updated client pointer for player " + nickname);
         }
 
         const Player* opponent = game->getOpponent(client);
@@ -1019,13 +996,11 @@ void Server::handleReconnectAccept(Client* client) {
             bool opponentIsDisconnected = (disconnectedPlayers.find(opponentNickname) != disconnectedPlayers.end());
 
             if (opponentIsDisconnected) {
-                LOG_INFO("Player " + nickname + " reconnected, but opponent " + opponentNickname + " is still disconnected");
                 client->queueMessage(Protocol::buildMessage({
                     Protocol::CMD_PLAYER_DISCONNECTED,
                     opponentNickname
                 }));
             } else {
-                LOG_INFO("Player " + nickname + " reconnected, opponent " + opponentNickname + " is connected");
 
                 std::string role = game->getPlayerRole(client);
                 std::string opponentRole = game->getPlayerRole(opponent->client);
@@ -1089,7 +1064,6 @@ void Server::handleReconnectAccept(Client* client) {
             }
         }
 
-        LOG_INFO("Reconnected player - sent game state to both players");
     }
 
     // Remove from disconnected players
@@ -1130,7 +1104,6 @@ void Server::handleReconnectDecline(Client* client) {
 
         // If room is empty (all players disconnected/declined), delete it
         if (room->getPlayerCount() == 0) {
-            LOG_INFO("Deleting empty room " + std::to_string(oldRoomId) + " (player declined reconnect)");
             rooms.erase(roomIt);
         } else {
             // Room has other player(s) - notify them and reset room to WAITING
@@ -1154,7 +1127,6 @@ void Server::handleReconnectDecline(Client* client) {
 
             // Reset room to WAITING state (deletes game, sets state to WAITING)
             room->resetGame();
-            LOG_INFO("Room " + std::to_string(oldRoomId) + " reset to WAITING (player declined reconnect)");
         }
     }
 
@@ -1163,7 +1135,6 @@ void Server::handleReconnectDecline(Client* client) {
     activeNicknames.insert(nickname);
 
     client->queueMessage(Protocol::buildMessage({Protocol::CMD_OK, client->getSessionId()}));
-    LOG_INFO("Client " + client->getAddress() + " fresh login as " + nickname + " after declining reconnect");
 
     // Log state
     std::map<std::string, std::string> loginData = {
@@ -1211,12 +1182,10 @@ void Server::cleanupTimedOutDisconnectedPlayers() {
             if (roomIt != rooms.end()) {
                 Room* room = roomIt->second.get();
                 if (room->getPlayerCount() == 0 && room->getGame() != nullptr) {
-                    LOG_INFO("Deleting room " + std::to_string(roomId) + " (all players timed out)");
                     rooms.erase(roomIt);
                 }
             }
 
-            LOG_INFO("Removed timed out player " + nickname);
         }
     }
 }
@@ -1225,7 +1194,6 @@ void Server::cleanupTimedOutDisconnectedPlayers() {
  * Ukončí server.
  */
 void Server::shutdown() {
-    LOG_INFO("Terminating server...");
     running = false;
 
     // Vymazání místností

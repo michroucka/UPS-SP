@@ -157,7 +157,6 @@ public class GameController {
 
     @FXML
     private void handleConnect() {
-        Logger.info("handleConnect() called");
         String host = serverHostField.getText().trim();
         String portStr = serverPortField.getText().trim();
         String nickname = nicknameField.getText().trim();
@@ -185,18 +184,13 @@ public class GameController {
         updateStatus("Connecting to " + host + ":" + port + "...");
 
         new Thread(() -> {
-            Logger.info("Connect thread started, connecting to " + host + ":" + port);
             try {
                 if (gameClient.connect()) {
-                    Logger.info("Connected successfully, attempting login as " + nickname);
                     Platform.runLater(() -> updateStatus("Logging in as " + nickname + "..."));
 
                     if (gameClient.login(nickname)) {
-                        Logger.info("Login successful");
-
                         // Check if server sent RECONNECT_QUERY
                         if (gameClient.hasPendingReconnectQuery()) {
-                            Logger.info("Reconnect query detected - showing dialog to user");
 
                             String opponentName = gameClient.getReconnectOpponentNickname();
 
@@ -228,7 +222,6 @@ public class GameController {
                             }
 
                             boolean reconnectAccepted = userChoice[0];
-                            Logger.info("User chose to " + (reconnectAccepted ? "accept" : "decline") + " reconnect");
 
                             boolean reconnectResult;
                             if (reconnectAccepted) {
@@ -249,8 +242,6 @@ public class GameController {
 
                             // Continue based on user choice
                             if (reconnectAccepted) {
-                                Logger.info("Reconnect accepted - will restore game state");
-
                                 // Start heartbeat and message receiver
                                 gameClient.getNetworkClient().startHeartbeat(() -> {
                                     Platform.runLater(() -> {
@@ -286,12 +277,9 @@ public class GameController {
 
                                 return;  // Exit early - reconnect flow complete
                             } else {
-                                Logger.info("Reconnect declined - starting fresh in lobby");
                                 // Fall through to normal login flow below
                             }
                         }
-
-                        Logger.info("Starting message receiver");
 
                         // Start heartbeat to detect server unavailability
                         gameClient.getNetworkClient().startHeartbeat(() -> {
@@ -305,7 +293,6 @@ public class GameController {
                         startMessageReceiver();
 
                         Platform.runLater(() -> {
-                            Logger.info("Updating UI after successful login");
                             connectionStatus.setText("Connected");
                             connectionStatus.setStyle("-fx-text-fill: #4CAF50; -fx-font-weight: bold;");
                             connectButton.setDisable(true);
@@ -882,7 +869,6 @@ public class GameController {
         syncResponseQueue.clear();
 
         messageReceiverThread = new Thread(() -> {
-            Logger.info("Message receiver thread started.");
             while (running && gameClient != null && gameClient.isConnected()) {
                 try {
                     ProtocolMessage msg = gameClient.receiveMessage();
@@ -926,7 +912,6 @@ public class GameController {
             if (running && !manualDisconnect && (gameClient == null || !gameClient.isConnected())) {
                 Platform.runLater(this::attemptReconnect);
             }
-            Logger.info("Message receiver thread stopped.");
         });
         messageReceiverThread.setDaemon(true);
         messageReceiverThread.start();
@@ -940,7 +925,6 @@ public class GameController {
      */
     private void startMessageProcessor() {
         messageProcessorThread = new Thread(() -> {
-            Logger.info("Message processor thread started.");
             while (running) {
                 try {
                     // Only read from async queue - no need to check message type or put back
@@ -986,7 +970,6 @@ public class GameController {
                     break;
                 }
             }
-            Logger.info("Message processor thread stopped.");
         });
         messageProcessorThread.setDaemon(true);
         messageProcessorThread.start();
@@ -1148,6 +1131,7 @@ public class GameController {
                         // Replace old client with new one
                         gameClient = newClient;
 
+                        Logger.info("Automatic reconnect successful");
                         Platform.runLater(() -> {
                             showAlert("Reconnect successful",
                                     "You have been successfully reconnected to the server.");
@@ -1175,6 +1159,7 @@ public class GameController {
 
             if (!reconnected && !manualDisconnect) {
                 // All automatic attempts failed - offer manual reconnect
+                Logger.warning("Automatic reconnect failed after " + MAX_AUTO_RECONNECT_ATTEMPTS + " attempts");
                 Platform.runLater(() -> {
                     updateStatus("Unable to reconnect automatically. Please reconnect manually.");
                     connectionStatus.setText("Disconnected");
@@ -1205,14 +1190,12 @@ public class GameController {
                 ProtocolMessage playerDisconnected = asyncMessageQueue.poll();
 
                 if (gameStart != null && gameStart.getCommand().equals("GAME_START")) {
-                    Logger.info("Reconnect detected (GAME_START in queue), processing reconnect");
                     syncResponseQueue.offer(gameStart);
 
                     // Start message processor now
                     startMessageProcessor();
 
                     Platform.runLater(() -> {
-                        Logger.info("Reconnect - showing game panel without reset");
                         lobbyPanel.setVisible(false);
                         gamePanel.setVisible(true);
                         waitForGameStart();
@@ -1226,14 +1209,12 @@ public class GameController {
                 }
 
                 if (playerDisconnected != null && playerDisconnected.getCommand().equals("PLAYER_DISCONNECTED")) {
-                    Logger.info("Reconnect detected (PLAYER_DISCONNECTED in queue, waiting for opponent)");
                     asyncMessageQueue.offer(playerDisconnected);
 
                     // Start message processor now
                     startMessageProcessor();
 
                     Platform.runLater(() -> {
-                        Logger.info("Reconnect - showing game panel, waiting for opponent");
                         lobbyPanel.setVisible(false);
                         gamePanel.setVisible(true);
                         // PLAYER_DISCONNECTED handler will show waitingForOpponentArea
@@ -1250,8 +1231,6 @@ public class GameController {
                 }
 
                 // No reconnect - server restarted, reset state and show lobby
-                Logger.info("No reconnect detected, showing lobby");
-
                 // Reset game client state (server restarted)
                 boolean wasInGame = false;
                 if (gameClient != null) {
@@ -1344,7 +1323,6 @@ public class GameController {
     }
 
     private void handleMessage(ProtocolMessage msg) {
-        Logger.info("Handling message: " + msg.toString());
         Platform.runLater(() -> {
             String cmd = msg.getCommand();
 

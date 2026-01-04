@@ -59,13 +59,11 @@ public class GameClient {
      * @return true if successful
      */
     public boolean connect() {
-        Logger.info("Connecting to server at " + networkClient.getServerHost() + ":" + networkClient.getServerPort());
         if (networkClient.connect()) {
             setState(ClientState.CONNECTED);
-            Logger.info("Successfully connected to server.");
+            Logger.info("Connected to server");
             return true;
         }
-        Logger.warning("Failed to connect to server.");
         return false;
     }
 
@@ -93,11 +91,9 @@ public class GameClient {
         ProtocolMessage loginMsg;
         if (sessionId != null && !sessionId.isEmpty()) {
             // Reconnect - include session ID
-            Logger.info("Attempting to reconnect with nickname: " + nickname + " and session ID: " + sessionId);
             loginMsg = new ProtocolMessage("LOGIN", nickname, sessionId);
         } else {
             // New login
-            Logger.info("Attempting to login with nickname: " + nickname);
             loginMsg = ProtocolMessage.login(nickname);
         }
 
@@ -132,7 +128,6 @@ public class GameClient {
         if ("RECONNECT_QUERY".equals(msg.getCommand())) {
             // Server is asking if we want to reconnect to an ongoing game
             if (msg.getParameterCount() >= 2) {
-                Logger.info("Received reconnect query for room: " + msg.getParameter(0));
                 this.hasPendingReconnectQuery = true;
                 this.reconnectRoomId = msg.getParameter(0);
                 this.reconnectOpponentNickname = msg.getParameter(1);
@@ -148,7 +143,7 @@ public class GameClient {
             this.nickname = nickname;
             setState(ClientState.LOBBY);
             this.hasPendingReconnectQuery = false;  // Clear any pending query
-            Logger.info("Login successful. Session ID: " + this.sessionId);
+            Logger.info("Login successful");
             return true;
         }
 
@@ -201,7 +196,7 @@ public class GameClient {
      */
     public void disconnect() {
         if (state != ClientState.DISCONNECTED) {
-            Logger.info("Disconnecting from server.");
+            Logger.info("Disconnecting from server");
             networkClient.send(ProtocolMessage.disconnect().toString());
             networkClient.disconnect();
             setState(ClientState.DISCONNECTED);
@@ -287,10 +282,7 @@ public class GameClient {
     }
 
     public void setState(ClientState newState) {
-        if (this.state != newState) {
-            Logger.info("Client state changed from " + this.state + " to " + newState);
-            this.state = newState;
-        }
+        this.state = newState;
     }
 
     public void setCurrentRoomId(String roomId) {
@@ -356,7 +348,6 @@ public class GameClient {
             return false;
         }
 
-        Logger.info("Accepting reconnect query.");
         // Send RECONNECT_ACCEPT
         if (!networkClient.send(ProtocolMessage.reconnectAccept().toString())) {
             Logger.error("Failed to send RECONNECT_ACCEPT.");
@@ -386,7 +377,7 @@ public class GameClient {
             this.sessionId = msg.getParameter(0);
             setState(ClientState.PLAYING);  // Reconnecting to game
             this.hasPendingReconnectQuery = false;
-            Logger.info("Successfully reconnected. New session ID: " + this.sessionId);
+            Logger.info("Reconnected to game successfully");
             return true;
         }
 
@@ -404,7 +395,6 @@ public class GameClient {
             return false;
         }
 
-        Logger.info("Declining reconnect query.");
         // Send RECONNECT_DECLINE
         if (!networkClient.send(ProtocolMessage.reconnectDecline().toString())) {
             Logger.error("Failed to send RECONNECT_DECLINE.");
@@ -434,7 +424,6 @@ public class GameClient {
             this.sessionId = msg.getParameter(0);
             setState(ClientState.LOBBY);
             this.hasPendingReconnectQuery = false;
-            Logger.info("Successfully declined reconnect. New session ID: " + this.sessionId);
             return true;
         }
 

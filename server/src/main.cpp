@@ -87,8 +87,6 @@ int main(int argc, char* argv[]) {
     LOG_INFO("=== Oko Bere Server ===");
     LOG_INFO("Address: " + address);
     LOG_INFO("Port: " + std::to_string(port));
-    LOG_INFO("Max clients: " + std::to_string(max_clients));
-    LOG_INFO("Max rooms: " + std::to_string(max_rooms));
 
     // Vytvoření serveru
     Server server(address, port, max_clients, max_rooms);
