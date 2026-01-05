@@ -1183,6 +1183,28 @@ void Server::cleanupTimedOutDisconnectedPlayers() {
                 Room* room = roomIt->second.get();
                 if (room->getPlayerCount() == 0 && room->getGame() != nullptr) {
                     rooms.erase(roomIt);
+                } else {
+                    // Room has other player(s) - notify them and reset room to WAITING
+                    Game* game = room->getGame();
+                    if (game) {
+                        // Notify remaining players that opponent timed out
+                        // Get the timed out player to find opponent
+                        Player* timedOutPlayer = game->getPlayerByNickname(nickname);
+                        if (timedOutPlayer) {
+                            Player* opponent = game->getOpponent(timedOutPlayer->client);
+                            if (opponent && opponent->client) {
+                                opponent->client->queueMessage(Protocol::buildMessage({
+                                    Protocol::CMD_ERROR,
+                                    "Opponent timed out. Room reset to WAITING."
+                                }));
+                                // Return opponent back to IN_ROOM state
+                                opponent->client->setState(Protocol::IN_ROOM);
+                            }
+                        }
+                    }
+
+                    // Reset room to WAITING state (deletes game, sets state to WAITING)
+                    room->resetGame();
                 }
             }
 
