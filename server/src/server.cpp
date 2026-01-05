@@ -1110,23 +1110,35 @@ void Server::handleReconnectDecline(Client* client) {
             Game* game = room->getGame();
             if (game) {
                 // Notify remaining players that opponent declined reconnect
-                // Get the declining player to find opponent
-                Player* decliningPlayer = game->getPlayerByNickname(nickname);
-                if (decliningPlayer) {
-                    Player* opponent = game->getOpponent(decliningPlayer->client);
-                    if (opponent && opponent->client) {
-                        opponent->client->queueMessage(Protocol::buildMessage({
-                            Protocol::CMD_ERROR,
-                            "Opponent declined reconnect. Room reset to WAITING."
-                        }));
-                        // Return opponent back to IN_ROOM state
-                        opponent->client->setState(Protocol::IN_ROOM);
-                    }
+                // Find opponent by nickname (client pointer may be invalid after disconnect)
+                Player* opponent = game->getOpponentByNickname(nickname);
+                if (opponent && opponent->client) {
+                    opponent->client->queueMessage(Protocol::buildMessage({
+                        Protocol::CMD_ERROR,
+                        "Opponent declined reconnect. Room reset to WAITING."
+                    }));
+                    // Return opponent back to IN_ROOM state
+                    opponent->client->setState(Protocol::IN_ROOM);
                 }
             }
 
             // Reset room to WAITING state (deletes game, sets state to WAITING)
             room->resetGame();
+
+            // Remove all other disconnected players from this room
+            // (since the game no longer exists, they cannot reconnect)
+            std::vector<std::string> playersToRemove;
+            for (const auto& pair : disconnectedPlayers) {
+                if (pair.second.roomId == oldRoomId && pair.first != nickname) {
+                    playersToRemove.push_back(pair.first);
+                }
+            }
+
+            for (const std::string& playerNickname : playersToRemove) {
+                disconnectedPlayers.erase(playerNickname);
+                activeNicknames.erase(playerNickname);
+                LOG_INFO("Removed player " + playerNickname + " from disconnectedPlayers - room was reset");
+            }
         }
     }
 
@@ -1188,23 +1200,35 @@ void Server::cleanupTimedOutDisconnectedPlayers() {
                     Game* game = room->getGame();
                     if (game) {
                         // Notify remaining players that opponent timed out
-                        // Get the timed out player to find opponent
-                        Player* timedOutPlayer = game->getPlayerByNickname(nickname);
-                        if (timedOutPlayer) {
-                            Player* opponent = game->getOpponent(timedOutPlayer->client);
-                            if (opponent && opponent->client) {
-                                opponent->client->queueMessage(Protocol::buildMessage({
-                                    Protocol::CMD_ERROR,
-                                    "Opponent timed out. Room reset to WAITING."
-                                }));
-                                // Return opponent back to IN_ROOM state
-                                opponent->client->setState(Protocol::IN_ROOM);
-                            }
+                        // Find opponent by nickname (client pointer may be invalid after disconnect)
+                        Player* opponent = game->getOpponentByNickname(nickname);
+                        if (opponent && opponent->client) {
+                            opponent->client->queueMessage(Protocol::buildMessage({
+                                Protocol::CMD_ERROR,
+                                "Opponent timed out. Room reset to WAITING."
+                            }));
+                            // Return opponent back to IN_ROOM state
+                            opponent->client->setState(Protocol::IN_ROOM);
                         }
                     }
 
                     // Reset room to WAITING state (deletes game, sets state to WAITING)
                     room->resetGame();
+
+                    // Remove all other disconnected players from this room
+                    // (since the game no longer exists, they cannot reconnect)
+                    std::vector<std::string> playersToRemove;
+                    for (const auto& pair : disconnectedPlayers) {
+                        if (pair.second.roomId == roomId && pair.first != nickname) {
+                            playersToRemove.push_back(pair.first);
+                        }
+                    }
+
+                    for (const std::string& playerNickname : playersToRemove) {
+                        disconnectedPlayers.erase(playerNickname);
+                        activeNicknames.erase(playerNickname);
+                        LOG_INFO("Removed player " + playerNickname + " from disconnectedPlayers - room was reset");
+                    }
                 }
             }
 

@@ -108,6 +108,7 @@ public:
     void notifyYourTurn(Player* player);
     std::string getPlayerRole(Client* client) const;
     Player* getPlayerByNickname(const std::string& nickname);
+    Player* getOpponentByNickname(const std::string& nickname);
 
 private:
     void dealInitialCards();

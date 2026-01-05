@@ -479,6 +479,16 @@ Player* Game::getPlayerByNickname(const std::string& nickname) {
     return nullptr;
 }
 
+Player* Game::getOpponentByNickname(const std::string& nickname) {
+    if (player1 && player1->nickname == nickname) {
+        return player2;
+    }
+    if (player2 && player2->nickname == nickname) {
+        return player1;
+    }
+    return nullptr;
+}
+
 const Player* Game::getOpponent(Client* client) const {
     if (player1 && player1->client == client) return player2;
     if (player2 && player2->client == client) return player1;
