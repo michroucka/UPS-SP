@@ -1375,7 +1375,6 @@ public class GameController {
                                  "The system will wait for them to reconnect.\n" +
                                  "If they don't reconnect, a new opponent may join.");
 
-                        // Start waiting for new game in a separate thread to avoid blocking
                         waitForGameStart();
                     });
                     break;
@@ -1384,6 +1383,48 @@ public class GameController {
                     String reconnectedPlayer = msg.getParameter(0);
                     Platform.runLater(() -> {
                         updateStatus("Opponent " + reconnectedPlayer + " has reconnected. Resuming game...");
+                    });
+                    break;
+
+                case "OPPONENT_LEFT":
+                    // VALIDATION: Validate opponent nickname
+                    if (!MessageValidator.validateParameterCount(msg, 2)) {
+                        showError("Invalid OPPONENT_LEFT message from server");
+                        break;
+                    }
+
+                    String leftPlayer = msg.getParameter(0);
+                    String reason = msg.getParameter(1);
+                    Platform.runLater(() -> {
+                        // Reset game state completely and stay in room
+                        if (gameClient != null) {
+                            gameClient.resetGameState();
+                            gameClient.setState(GameClient.ClientState.IN_ROOM);
+                        }
+
+                        // Clear game display completely
+                        yourCardsBox.getChildren().clear();
+                        handValueLabel.setText("(Value: 0)");
+                        opponentCardsBox.getChildren().clear();
+                        opponentHandValueLabel.setText("(Value: 0)");
+                        hitButton.setDisable(true);
+                        standButton.setDisable(true);
+                        waitingArea.setVisible(false);
+                        roundResultArea.setVisible(false);
+
+                        // Hide game info and show waiting for opponent area
+                        gameInfoContainer.setVisible(false);
+                        cardsContainer.setVisible(false);
+                        gameActionsContainer.setVisible(false);
+                        waitingForOpponentArea.setVisible(true);
+
+                        String reasonText = reason.equals("declined") ? "declined to reconnect" : "timed out";
+                        updateStatus("Opponent left. Waiting for new opponent...");
+                        showAlert("Opponent Left",
+                                leftPlayer + " has " + reasonText + ".\n\n" +
+                                "Waiting for a new opponent to join...");
+
+                        waitForGameStart();
                     });
                     break;
 

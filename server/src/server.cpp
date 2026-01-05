@@ -1113,10 +1113,11 @@ void Server::handleReconnectDecline(Client* client) {
                 // Find opponent by nickname (client pointer may be invalid after disconnect)
                 Player* opponent = game->getOpponentByNickname(nickname);
                 if (opponent && opponent->client) {
-                    // Send PLAYER_DISCONNECTED instead of ERROR so client knows to wait for new opponent
+                    // Send OPPONENT_LEFT to indicate opponent won't reconnect (different from temporary disconnect)
                     opponent->client->queueMessage(Protocol::buildMessage({
-                        Protocol::CMD_PLAYER_DISCONNECTED,
-                        nickname
+                        Protocol::CMD_OPPONENT_LEFT,
+                        nickname,
+                        "declined"  // reason: declined or timeout
                     }));
                     // Return opponent back to IN_ROOM state
                     opponent->client->setState(Protocol::IN_ROOM);
@@ -1204,10 +1205,11 @@ void Server::cleanupTimedOutDisconnectedPlayers() {
                         // Find opponent by nickname (client pointer may be invalid after disconnect)
                         Player* opponent = game->getOpponentByNickname(nickname);
                         if (opponent && opponent->client) {
-                            // Send PLAYER_DISCONNECTED instead of ERROR so client knows to wait for new opponent
+                            // Send OPPONENT_LEFT to indicate opponent won't reconnect (different from temporary disconnect)
                             opponent->client->queueMessage(Protocol::buildMessage({
-                                Protocol::CMD_PLAYER_DISCONNECTED,
-                                nickname
+                                Protocol::CMD_OPPONENT_LEFT,
+                                nickname,
+                                "timeout"  // reason: declined or timeout
                             }));
                             // Return opponent back to IN_ROOM state
                             opponent->client->setState(Protocol::IN_ROOM);

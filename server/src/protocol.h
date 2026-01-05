@@ -48,6 +48,7 @@ namespace Protocol {
     const std::string CMD_GAME_END = "GAME_END";
     const std::string CMD_PLAYER_DISCONNECTED = "PLAYER_DISCONNECTED";
     const std::string CMD_PLAYER_RECONNECTED = "PLAYER_RECONNECTED";
+    const std::string CMD_OPPONENT_LEFT = "OPPONENT_LEFT";  // Opponent declined reconnect or timed out
 
     // Reconnect prompt zprávy
     const std::string CMD_RECONNECT_QUERY = "RECONNECT_QUERY";      // server -> klient
