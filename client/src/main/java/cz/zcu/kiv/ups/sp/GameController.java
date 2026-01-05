@@ -986,6 +986,7 @@ public class GameController {
             || cmd.equals("GAME_END")
             || cmd.equals("PLAYER_DISCONNECTED")
             || cmd.equals("PLAYER_RECONNECTED")
+            || cmd.equals("OPPONENT_LEFT")
             || cmd.equals("DEAL_CARDS")
             || cmd.equals("GAME_STATE")
             || cmd.equals("CARD");
