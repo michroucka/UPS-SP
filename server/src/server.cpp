@@ -1113,9 +1113,10 @@ void Server::handleReconnectDecline(Client* client) {
                 // Find opponent by nickname (client pointer may be invalid after disconnect)
                 Player* opponent = game->getOpponentByNickname(nickname);
                 if (opponent && opponent->client) {
+                    // Send PLAYER_DISCONNECTED instead of ERROR so client knows to wait for new opponent
                     opponent->client->queueMessage(Protocol::buildMessage({
-                        Protocol::CMD_ERROR,
-                        "Opponent declined reconnect. Room reset to WAITING."
+                        Protocol::CMD_PLAYER_DISCONNECTED,
+                        nickname
                     }));
                     // Return opponent back to IN_ROOM state
                     opponent->client->setState(Protocol::IN_ROOM);
@@ -1203,9 +1204,10 @@ void Server::cleanupTimedOutDisconnectedPlayers() {
                         // Find opponent by nickname (client pointer may be invalid after disconnect)
                         Player* opponent = game->getOpponentByNickname(nickname);
                         if (opponent && opponent->client) {
+                            // Send PLAYER_DISCONNECTED instead of ERROR so client knows to wait for new opponent
                             opponent->client->queueMessage(Protocol::buildMessage({
-                                Protocol::CMD_ERROR,
-                                "Opponent timed out. Room reset to WAITING."
+                                Protocol::CMD_PLAYER_DISCONNECTED,
+                                nickname
                             }));
                             // Return opponent back to IN_ROOM state
                             opponent->client->setState(Protocol::IN_ROOM);
