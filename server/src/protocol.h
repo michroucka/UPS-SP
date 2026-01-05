@@ -15,7 +15,7 @@ namespace Protocol {
     const int MAX_INVALID_MESSAGES = 3;
 
     // Timeouty (v sekundách)
-    const int RECONNECT_TIMEOUT = 300;  // 5 minut
+    const int RECONNECT_TIMEOUT = 30;
 
     // Příkazy klient -> server
     const std::string CMD_LOGIN = "LOGIN";
