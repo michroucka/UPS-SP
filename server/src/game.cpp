@@ -35,11 +35,11 @@ void Game::start() {
 
     state = PLAYING;
     currentRound = 1;
-    currentPlayer = player1IsBanker ? player2 : player1;  // PLAYER začíná první
+    currentPlayer = player1IsBanker ? player2 : player1;  // PLAYER starts first
 
     LOG_INFO("Game " + std::to_string(gameId) + " starting");
 
-    // Oznámit start hry (role závisí na player1IsBanker)
+    // Notify game start (role depends on player1IsBanker)
     std::string role1 = player1IsBanker ? "BANKER" : "PLAYER";
     std::string role2 = player1IsBanker ? "PLAYER" : "BANKER";
 
@@ -51,44 +51,44 @@ void Game::start() {
         Protocol::CMD_GAME_START, role2, player1->client->getNickname()
     }));
 
-    // Reset hráčů ale zatím NEROZDAT karty
+    // Reset players for new round
     player1->reset();
     player2->reset();
 
-    // Rozdat karty hracum
+    // Deal initial cards
     dealInitialCards();
 
-    // Oznámit stav hry
+    // Notify game state
     notifyGameState();
 
-    // Získat PLAYER a BANKER
+    // Get PLAYER and BANKER
     Player* playerRole = player1IsBanker ? player2 : player1;
     Player* bankerRole = player1IsBanker ? player1 : player2;
 
-    // Kontrola double ace pro PLAYER
+    // Check double ace for PLAYER
     if (playerRole->hasDoubleAce()) {
         playerRole->standing = true;
 
-        // Poslat YOUR_TURN aby klient věděl, že má čekat
+        // Send YOUR_TURN so client knows to wait
         notifyYourTurn(playerRole);
 
-        // Okamžitě zavolat stand
+        // Immediately call stand
         playerRole->client->queueMessage(Protocol::buildMessage({
             Protocol::CMD_OK
         }));
 
-        // Oznámit BANKER
+        // Notify BANKER
         if (bankerRole) {
             notifyOpponentAction(bankerRole, "STAND", "");
         }
 
-        // Oznámit PLAYER, že má čekat na soupeře
+        // Notify PLAYER to wait for opponent
         notifyOpponentAction(playerRole, "HIT", "");
 
-        // Přepnout na BANKER
+        // Switch to BANKER
         switchTurns();
 
-        // Kontrola double ace pro BANKER
+        // Check double ace for BANKER
         if (bankerRole->hasDoubleAce()) {
             bankerRole->standing = true;
 
@@ -105,7 +105,7 @@ void Game::start() {
             notifyYourTurn(bankerRole);
         }
     } else {
-        // Oznámit PLAYER, že je na tahu
+        // Notify PLAYER that it's their turn
         notifyYourTurn(playerRole);
     }
 }
@@ -114,7 +114,7 @@ void Game::dealInitialCards() {
     Player* playerRole = player1IsBanker ? player2 : player1;
     Player* bankerRole = player1IsBanker ? player1 : player2;
 
-    // Rozdat karty
+    // Deal cards
     for (int i = 0; i < INIT_HAND_SIZE; i++) {
         playerRole->hand.push_back(deck.draw());
         bankerRole->hand.push_back(deck.draw());
@@ -149,17 +149,17 @@ void Game::playerHit(Client* client) {
         return;
     }
 
-    // Poslat OK potvrzení (stejně jako u playerStand)
+    // Send OK confirmation (same as playerStand)
     client->queueMessage(Protocol::buildMessage({ Protocol::CMD_OK }));
 
-    // Přidat kartu
+    // Add card
     Card card = deck.draw();
     player->hand.push_back(card);
 
-    // Poslat kartu hráči
+    // Send card to player
     client->queueMessage(Protocol::buildMessage({Protocol::CMD_CARD, card.toString()}));
 
-    // Oznámit protihráči
+    // Notify opponent
     Player* opponent = getOpponent(client);
     if (opponent) {
         notifyOpponentAction(opponent, "HIT", "");
@@ -169,19 +169,19 @@ void Game::playerHit(Client* client) {
         playerStand(player->client);
     }
 
-    // Kontrola busted
+    // Check busted
     if (player->getHandValue() > 21) {
         player->busted = true;
         LOG_INFO("Player " + client->getNickname() + " busted with value " + std::to_string(player->getHandValue()));
 
-        // Oznámit protihráči
+        // Notify opponent
         if (opponent) {
             notifyOpponentAction(opponent, "BUSTED", "");
         }
 
         checkRoundEnd();
     } else {
-        // Hráč může pokračovat
+        // Player can continue
         notifyYourTurn(player);
     }
 }
@@ -215,39 +215,39 @@ void Game::playerStand(Client* client) {
     player->standing = true;
     client->queueMessage(Protocol::buildMessage({ Protocol::CMD_OK }));
 
-    // Oznámit protihráči
+    // Notify opponent
     Player* opponent = getOpponent(client);
     if (opponent) {
         notifyOpponentAction(opponent, "STAND", "");
     }
 
-    // Určit kdo je PLAYER a kdo BANKER
+    // Determine who is PLAYER and who is BANKER
     Player* playerRole = player1IsBanker ? player2 : player1;
     Player* bankerRole = player1IsBanker ? player1 : player2;
 
-    // Pokud je to PLAYER, přepnout na BANKER
+    // If this is PLAYER, switch to BANKER
     if (player == playerRole) {
         switchTurns();
 
         if (bankerRole->hasDoubleAce()) {
             bankerRole->standing = true;
 
-            // Poslat YOUR_TURN aby klient věděl, že je nové kolo
+            // Send YOUR_TURN so client knows it's a new round
             notifyYourTurn(bankerRole);
 
-            // Oznámit PLAYER
+            // Notify PLAYER
             if (playerRole) {
                 notifyOpponentAction(playerRole, "STAND", "");
             }
 
-            // Konec kola - oba stojí
+            // End of round - both are standing
             checkRoundEnd();
         } else {
-            // BANKER nemá double ace, je na tahu
+            // BANKER doesn't have double ace, it's their turn
             notifyYourTurn(bankerRole);
         }
     } else {
-        // BANKER stojí, konec kola
+        // BANKER is standing, end of round
         checkRoundEnd();
     }
 }
@@ -261,9 +261,9 @@ void Game::switchTurns() {
 }
 
 void Game::checkRoundEnd() {
-    // Kolo končí když:
-    // 1. Někdo presahl
-    // 2. Oba stojí
+    // Round ends when:
+    // 1. Someone busted
+    // 2. Both are standing
 
     if (player1->busted || player2->busted || (player1->standing && player2->standing)) {
         endRound();
@@ -278,12 +278,12 @@ void Game::endRound() {
 
     std::string winner;
 
-    // Vyhodnocení
+    // Evaluation
     if (player1->busted) {
-        winner = "OPPONENT";  // Pro player1 to znamená že prohrál
+        winner = "OPPONENT";  // For player1 this means they lost
         player2->score++;
     } else if (player2->busted) {
-        winner = "YOU";  // Pro player1 to znamená že vyhrál
+        winner = "YOU";  // For player1 this means they won
         player1->score++;
     } else if (val1 > val2) {
         winner = "YOU";
@@ -292,17 +292,17 @@ void Game::endRound() {
         winner = "OPPONENT";
         player2->score++;
     } else {
-        // Stejná hodnota - vyhrává BANKER
+        // Same value - BANKER wins
         if (player1IsBanker) {
-            winner = "YOU";  // player1 je BANKER, vyhrává
+            winner = "YOU";  // player1 is BANKER, wins
             player1->score++;
         } else {
-            winner = "OPPONENT";  // player2 je BANKER, vyhrává
+            winner = "OPPONENT";  // player2 is BANKER, wins
             player2->score++;
         }
     }
 
-    // Oznámit ROUND_END hráčům
+    // Notify players about ROUND_END
     player1->client->queueMessage(Protocol::buildMessage({
         Protocol::CMD_ROUND_END,
         winner,
@@ -312,7 +312,7 @@ void Game::endRound() {
         player2->getHandString()
     }));
 
-    // Pro player2 je winner obrácený
+    // For player2 the winner is reversed
     std::string winner2 = winner;
     if (winner == "YOU") winner2 = "OPPONENT";
     else if (winner == "OPPONENT") winner2 = "YOU";
@@ -328,54 +328,53 @@ void Game::endRound() {
 
     state = ROUND_ENDED;
 
-    // Kontrola konce hry (můžeme přidat limit kol, zatím neomezeno)
-    // Pro demo necháme hru pokračovat do dalšího kola
+    // Check game end - game ends when player reaches SCORE_TO_WIN (3 victories)
     if (player1->score >= SCORE_TO_WIN || player2->score >= SCORE_TO_WIN) {
         endGame();
     } else {
-        // Další kolo - vyměnit role
+        // Next round - swap roles
         currentRound++;
         player1IsBanker = !player1IsBanker;  // Swap roles!
 
-        // Reset hráčů
+        // Reset players
         player1->reset();
         player2->reset();
 
-        // Získat PLAYER a BANKER pro nové kolo
+        // Get PLAYER and BANKER for new round
         Player* playerRole = player1IsBanker ? player2 : player1;
         Player* bankerRole = player1IsBanker ? player1 : player2;
 
-        currentPlayer = playerRole;  // PLAYER začíná
+        currentPlayer = playerRole;  // PLAYER starts
 
         dealInitialCards();
 
         state = PLAYING;
         notifyGameState();
 
-        // Kontrola double ace pro PLAYER
+        // Check double ace for PLAYER
         if (playerRole->hasDoubleAce()) {
             playerRole->standing = true;
 
-            // Poslat YOUR_TURN aby klient věděl, že je nové kolo
+            // Send YOUR_TURN so client knows it's a new round
             notifyYourTurn(playerRole);
 
-            // Okamžitě zavolat stand
+            // Immediately call stand
             playerRole->client->queueMessage(Protocol::buildMessage({
                 Protocol::CMD_OK
             }));
 
-            // Oznámit BANKER
+            // Notify BANKER
             if (bankerRole) {
                 notifyOpponentAction(bankerRole, "STAND", "");
             }
 
-            // Oznámit PLAYER, že má čekat na soupeře
+            // Notify PLAYER to wait for opponent
             notifyOpponentAction(playerRole, "HIT", "");
 
-            // Přepnout na BANKER
+            // Switch to BANKER
             switchTurns();
 
-            // Kontrola double ace pro BANKER
+            // Check double ace for BANKER
             if (bankerRole->hasDoubleAce()) {
                 bankerRole->standing = true;
 
@@ -429,7 +428,7 @@ void Game::endGame() {
 
     state = GAME_ENDED;
 
-    // Stav hráčů bude aktualizován v Room::checkAndHandleGameEnd()
+    // Player state will be updated in Room::checkAndHandleGameEnd()
 }
 
 bool Game::isPlayerTurn(Client* client) const {
@@ -511,7 +510,7 @@ std::string Game::getWinner() const {
 }
 
 void Game::notifyGameState() {
-    // Určit role podle player1IsBanker
+    // Determine roles based on player1IsBanker
     std::string role1 = player1IsBanker ? "BANKER" : "PLAYER";
     std::string role2 = player1IsBanker ? "PLAYER" : "BANKER";
 
@@ -553,7 +552,7 @@ void Game::notifyDealCards(Player* player) {
 void Game::notifyYourTurn(Player* player) {
     player->client->queueMessage(Protocol::buildMessage({
         Protocol::CMD_YOUR_TURN,
-        "NONE"  // Zatím nemáme table card
+        "NONE"  // We don't have table card yet
     }));
 }
 

@@ -18,7 +18,7 @@ Client::~Client() {
 }
 
 /**
- * Přidá data do read bufferu.
+ * Adds data to the read buffer.
  * VALIDATION: Throws exception if buffer would exceed MAX_MESSAGE_SIZE
  */
 void Client::appendToReadBuffer(const std::string& data) {
@@ -30,15 +30,15 @@ void Client::appendToReadBuffer(const std::string& data) {
 }
 
 /**
- * Kontroluje, zda buffer obsahuje kompletní zprávu (ukončenou \n).
+ * Checks if the buffer contains a complete message (terminated with \n).
  */
 bool Client::hasCompleteMessage() const {
     return readBuffer.find(Protocol::MESSAGE_END) != std::string::npos;
 }
 
 /**
- * Extrahuje jednu kompletní zprávu z bufferu.
- * @return Zpráva bez koncového \n
+ * Extracts one complete message from the buffer.
+ * @return Message without the trailing \n
  */
 std::string Client::extractMessage() {
     size_t pos = readBuffer.find(Protocol::MESSAGE_END);
@@ -53,14 +53,14 @@ std::string Client::extractMessage() {
 }
 
 /**
- * Přidá zprávu do fronty pro odeslání.
+ * Adds a message to the send queue.
  */
 void Client::queueMessage(const std::string& message) {
     writeQueue.push(message);
 }
 
 /**
- * Vrátí další zprávu k odeslání.
+ * Returns the next message to send.
  */
 std::string Client::getNextMessageToSend() {
     if (writeQueue.empty()) {
@@ -73,14 +73,14 @@ std::string Client::getNextMessageToSend() {
 }
 
 /**
- * Aktualizuje čas poslední aktivity.
+ * Updates the last activity time.
  */
 void Client::updateLastActivity() {
     lastActivity = time(nullptr);
 }
 
 /**
- * Kontroluje, zda klient není timed out.
+ * Checks if the client has timed out.
  */
 bool Client::isTimedOut(int timeoutSeconds) const {
     time_t now = time(nullptr);
@@ -88,7 +88,7 @@ bool Client::isTimedOut(int timeoutSeconds) const {
 }
 
 /**
- * Generuje náhodné session ID.
+ * Generates a random session ID.
  */
 std::string Client::generateSessionId() {
     std::random_device rd;

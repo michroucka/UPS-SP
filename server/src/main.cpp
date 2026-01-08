@@ -3,13 +3,13 @@
 #include "server.h"
 #include "logger.h"
 
-// Globální ukazatel na server pro signal handler
+// Global pointer to server for signal handler
 Server* globalServer = nullptr;
 int max_clients = 10;
 int max_rooms = 5;
 
 /**
- * Handler pro SIGINT (Ctrl+C) - graceful shutdown.
+ * Handler for SIGINT (Ctrl+C) - graceful shutdown.
  */
 void signalHandler(int signal) {
     if (signal == SIGINT) {
@@ -22,7 +22,7 @@ void signalHandler(int signal) {
 }
 
 /**
- * Vypíše nápovědu k použití programu.
+ * Prints program usage help.
  */
 void printUsage(const char* programName) {
     std::cout << "Usage: " << programName << " <IP address> <port> [-c <max clients>] [-r <max rooms>]" << std::endl;
@@ -30,7 +30,7 @@ void printUsage(const char* programName) {
 }
 
 int main(int argc, char* argv[]) {
-    // Kontrola argumentů
+    // Check arguments
     if (argc < 3 || argc > 7) {
         printUsage(argv[0]);
         return 1;
@@ -80,7 +80,7 @@ int main(int argc, char* argv[]) {
     }
 
 
-    // Nastavení loggeru
+    // Logger setup
     Logger::getInstance().setLogFile("server.log");
     Logger::getInstance().setConsoleOutput(true);
 
@@ -88,14 +88,14 @@ int main(int argc, char* argv[]) {
     LOG_INFO("Address: " + address);
     LOG_INFO("Port: " + std::to_string(port));
 
-    // Vytvoření serveru
+    // Create server
     Server server(address, port, max_clients, max_rooms);
     globalServer = &server;
 
-    // Registrace signal handleru pro Ctrl+C
+    // Register signal handler for Ctrl+C
     signal(SIGINT, signalHandler);
 
-    // Inicializace a spuštění
+    // Initialize and start
     if (!server.initialize()) {
         LOG_ERROR("Unable to initialize server");
         return 1;

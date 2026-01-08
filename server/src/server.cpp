@@ -19,7 +19,7 @@ Server::~Server() {
 }
 
 /**
- * Inicializace serveru - vytvoření socketu, bind, listen.
+ * Server initialization - socket creation, bind, listen.
  */
 bool Server::initialize() {
     LOG_INFO("Initializing server on " + address + ":" + std::to_string(port));
@@ -41,7 +41,7 @@ bool Server::initialize() {
 }
 
 /**
- * Vytvoří TCP socket.
+ * Creates a TCP socket.
  */
 bool Server::createSocket() {
     serverSocket = socket(AF_INET, SOCK_STREAM, 0);
@@ -50,7 +50,7 @@ bool Server::createSocket() {
         return false;
     }
 
-    // Nastavení SO_REUSEADDR pro možnost okamžitého restartu
+    // Set SO_REUSEADDR for immediate restart capability
     int opt = 1;
     if (setsockopt(serverSocket, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0) {
         LOG_WARNING("Unable to set SO_REUSEADDR: " + std::string(strerror(errno)));
@@ -60,7 +60,7 @@ bool Server::createSocket() {
 }
 
 /**
- * Binduje socket na adresu a port.
+ * Binds socket to address and port.
  */
 bool Server::bindSocket() {
     struct sockaddr_in serverAddr;
@@ -82,7 +82,7 @@ bool Server::bindSocket() {
 }
 
 /**
- * Nastaví socket do listening módu.
+ * Sets socket to listening mode.
  */
 bool Server::listenSocket() {
     if (listen(serverSocket, 10) < 0) {
@@ -94,7 +94,7 @@ bool Server::listenSocket() {
 }
 
 /**
- * Hlavní smyčka serveru - používá select() pro paralelní obsluhu.
+ * Main server loop - uses select() for parallel handling.
  */
 void Server::run() {
     running = true;
@@ -105,11 +105,11 @@ void Server::run() {
         FD_ZERO(&readfds);
         FD_ZERO(&writefds);
 
-        // Přidání server socketu
+        // Add server socket
         FD_SET(serverSocket, &readfds);
         int maxfd = serverSocket;
 
-        // Přidání všech klientských socketů
+        // Add all client sockets
         for (const auto& pair : clients) {
             int clientSocket = pair.first;
             Client* client = pair.second.get();
@@ -124,7 +124,7 @@ void Server::run() {
             }
         }
 
-        // Select s timeoutem 1 sekunda
+        // Select with 1 second timeout
         struct timeval timeout;
         timeout.tv_sec = 1;
         timeout.tv_usec = 0;
@@ -133,37 +133,37 @@ void Server::run() {
 
         if (activity < 0) {
             if (errno == EINTR) {
-                continue;  // Přerušeno signálem, pokračuj
+                continue;  // Interrupted by signal, continue
             }
             LOG_ERROR("Error select(): " + std::string(strerror(errno)));
             break;
         }
 
-        // Nové připojení
+        // New connection
         if (FD_ISSET(serverSocket, &readfds)) {
             acceptNewClient();
         }
 
-        // Zpracování klientů (musíme kopírovat klíče, protože můžeme mazat)
+        // Process clients (must copy keys because we may delete)
         std::vector<int> clientSockets;
         for (const auto& pair : clients) {
             clientSockets.push_back(pair.first);
         }
 
         for (int clientSocket : clientSockets) {
-            // Client může být mezitím odpojen
+            // Client may have been disconnected in the meantime
             if (clients.find(clientSocket) == clients.end()) {
                 continue;
             }
 
             Client* client = clients[clientSocket].get();
 
-            // Čtení dat
+            // Read data
             if (FD_ISSET(clientSocket, &readfds)) {
                 handleClientData(client);
             }
 
-            // Zápis dat
+            // Write data
             if (clients.find(clientSocket) != clients.end() &&
                 FD_ISSET(clientSocket, &writefds)) {
                 std::string message = client->getNextMessageToSend();
@@ -173,7 +173,7 @@ void Server::run() {
             }
         }
 
-        // Cleanup timed out klientů
+        // Cleanup timed out clients
         cleanupTimedOutClients();
 
         // Cleanup timed out disconnected players (5 minute timeout)
@@ -184,7 +184,7 @@ void Server::run() {
 }
 
 /**
- * Přijme nového klienta.
+ * Accepts a new client.
  */
 void Server::acceptNewClient() {
     struct sockaddr_in clientAddr;
@@ -196,19 +196,19 @@ void Server::acceptNewClient() {
         return;
     }
 
-    // Kontrola limitu klientů
+    // Check client limit
     if (clients.size() >= static_cast<size_t>(MAX_CLIENTS)) {
         LOG_WARNING("Connection refused - client limit reached");
         close(clientSocket);
         return;
     }
 
-    // Získání adresy klienta
+    // Get client address
     char clientIp[INET_ADDRSTRLEN];
     inet_ntop(AF_INET, &clientAddr.sin_addr, clientIp, INET_ADDRSTRLEN);
     std::string clientAddress = std::string(clientIp) + ":" + std::to_string(ntohs(clientAddr.sin_port));
 
-    // Vytvoření klienta
+    // Create client
     auto client = std::make_unique<Client>(clientSocket, clientAddress);
     clients[clientSocket] = std::move(client);
 
@@ -216,14 +216,14 @@ void Server::acceptNewClient() {
 }
 
 /**
- * Zpracuje data od klienta.
+ * Processes data from client.
  */
 void Server::handleClientData(Client* client) {
     char buffer[1024];
     int bytesRead = recv(client->getSocket(), buffer, sizeof(buffer) - 1, 0);
 
     if (bytesRead <= 0) {
-        // Klient se odpojil
+        // Client disconnected
         std::string reason = (bytesRead == 0) ? "Client ended connection" : "Read error";
         disconnectClient(client, reason);
         return;
@@ -242,12 +242,12 @@ void Server::handleClientData(Client* client) {
 
     client->updateLastActivity();
 
-    // Zpracování všech kompletních zpráv
+    // Process all complete messages
     while (client->hasCompleteMessage()) {
         std::string message = client->extractMessage();
         processMessage(client, message);
 
-        // Klient mohl být odpojen během zpracování
+        // Client may have been disconnected during processing
         if (clients.find(client->getSocket()) == clients.end()) {
             break;
         }
@@ -255,7 +255,7 @@ void Server::handleClientData(Client* client) {
 }
 
 /**
- * Odešle zprávu klientovi.
+ * Sends a message to client.
  */
 void Server::sendToClient(Client* client, const std::string& message) {
     int bytesSent = send(client->getSocket(), message.c_str(), message.length(), 0);
@@ -268,7 +268,7 @@ void Server::sendToClient(Client* client, const std::string& message) {
 }
 
 /**
- * Odpojí klienta.
+ * Disconnects a client.
  */
 void Server::disconnectClient(Client* client, const std::string& reason) {
     LOG_INFO("Disconnecting " + client->getAddress() + " (" + client->getNickname() + "): " + reason);
@@ -279,7 +279,7 @@ void Server::disconnectClient(Client* client, const std::string& reason) {
         {"reason", reason}
     };
 
-    // Odebrání z místnosti pokud v nějaké je
+    // Remove from room if in one
     Room* room = getRoomForClient(client);
     if (room) {
         int roomId = room->getId();
@@ -294,7 +294,7 @@ void Server::disconnectClient(Client* client, const std::string& reason) {
         // removePlayer with isDisconnect=true to preserve game state for reconnect
         room->removePlayer(client, true);
 
-        // Pokud je místnost prázdná, smazat ji
+        // If room is empty, delete it
         // Note: Don't delete room if game was in progress - wait for reconnect
         if (room->getPlayerCount() == 0 && !gameInProgress) {
             rooms.erase(roomId);
@@ -323,7 +323,7 @@ void Server::disconnectClient(Client* client, const std::string& reason) {
 }
 
 /**
- * Zpracuje zprávu od klienta.
+ * Processes a message from client.
  */
 void Server::processMessage(Client* client, const std::string& message) {
     if (message.empty()) {
@@ -339,7 +339,7 @@ void Server::processMessage(Client* client, const std::string& message) {
 
     const std::string& command = parts[0];
 
-    // Zpracování podle příkazu
+    // Process based on command
     if (command == Protocol::CMD_LOGIN) {
         handleLogin(client, parts);
     } else if (command == Protocol::CMD_PING) {
@@ -376,7 +376,17 @@ void Server::processMessage(Client* client, const std::string& message) {
 }
 
 /**
- * Zpracuje LOGIN příkaz.
+ * Processes LOGIN command (new login or reconnect).
+ *
+ * Function handles:
+ * - New login: nickname validation, session ID creation
+ * - Reconnect with session ID: session validation, game state restoration
+ * - Reconnect query: asking client if they want to continue ongoing game
+ * - Game state restoration: GAME_STATE, DEAL_CARDS, YOUR_TURN
+ * - Opponent notification about reconnect (PLAYER_RECONNECTED)
+ *
+ * @param client Client who is logging in
+ * @param parts Parsed message parts (LOGIN|nickname [|sessionId])
  */
 void Server::handleLogin(Client* client, const std::vector<std::string>& parts) {
     // Accept 2 parameters (LOGIN|nickname) or 3 (LOGIN|nickname|sessionId)
@@ -606,7 +616,7 @@ void Server::handleLogin(Client* client, const std::vector<std::string>& parts) 
             return;
         }
 
-        // Přihlášení úspěšné
+        // Login successful
         client->setNickname(nickname);
         client->setState(Protocol::LOBBY);
         activeNicknames.insert(nickname);
@@ -624,14 +634,14 @@ void Server::handleLogin(Client* client, const std::vector<std::string>& parts) 
 }
 
 /**
- * Zpracuje PING příkaz.
+ * Processes PING command.
  */
 void Server::handlePing(Client* client) {
     client->queueMessage(Protocol::buildMessage({Protocol::CMD_PONG}));
 }
 
 /**
- * Zpracuje DISCONNECT příkaz.
+ * Processes DISCONNECT command.
  */
 void Server::handleDisconnect(Client* client) {
     client->queueMessage(Protocol::buildMessage({Protocol::CMD_OK}));
@@ -639,7 +649,7 @@ void Server::handleDisconnect(Client* client) {
 }
 
 /**
- * Zpracuje ROOM_LIST příkaz.
+ * Processes ROOM_LIST command.
  */
 void Server::handleRoomList(Client* client) {
     if (client->getState() != Protocol::LOBBY) {
@@ -647,17 +657,17 @@ void Server::handleRoomList(Client* client) {
         return;
     }
 
-    // Počet místností
+    // Number of rooms
     client->queueMessage(Protocol::buildMessage({Protocol::CMD_ROOMS, std::to_string(rooms.size())}));
 
-    // Seznam místností
+    // List of rooms
     for (const auto& pair : rooms) {
         client->queueMessage(pair.second->toProtocolString() + "\n");
     }
 }
 
 /**
- * Zpracuje CREATE_ROOM příkaz.
+ * Processes CREATE_ROOM command.
  */
 void Server::handleCreateRoom(Client* client, const std::vector<std::string>& parts) {
     if (!validateMessage(client, parts, 2)) {
@@ -695,7 +705,7 @@ void Server::handleCreateRoom(Client* client, const std::vector<std::string>& pa
 }
 
 /**
- * Zpracuje JOIN_ROOM příkaz.
+ * Processes JOIN_ROOM command.
  */
 void Server::handleJoinRoom(Client* client, const std::vector<std::string>& parts) {
     if (!validateMessage(client, parts, 2)) {
@@ -742,7 +752,7 @@ void Server::handleJoinRoom(Client* client, const std::vector<std::string>& part
 }
 
 /**
- * Zpracuje LEAVE_ROOM příkaz.
+ * Processes LEAVE_ROOM command.
  */
 void Server::handleLeaveRoom(Client* client) {
     if (client->getState() != Protocol::IN_ROOM && client->getState() != Protocol::PLAYING) {
@@ -789,7 +799,7 @@ void Server::handleLeaveRoom(Client* client) {
 }
 
 /**
- * Zpracuje HIT příkaz.
+ * Processes HIT command.
  */
 void Server::handleHit(Client* client) {
     if (client->getState() != Protocol::PLAYING) {
@@ -805,10 +815,10 @@ void Server::handleHit(Client* client) {
 
     room->getGame()->playerHit(client);
 
-    // Zkontrolovat, zda hra skončila a případně vyčistit místnost
+    // Check if game ended and clean up room if needed
     room->checkAndHandleGameEnd();
 
-    // Pokud je místnost prázdná a ukončená, smazat ji
+    // If room is empty and finished, delete it
     if (room->getState() == ROOM_FINISHED && room->getPlayerCount() == 0) {
         int roomId = room->getId();
         rooms.erase(roomId);
@@ -816,7 +826,7 @@ void Server::handleHit(Client* client) {
 }
 
 /**
- * Zpracuje STAND příkaz.
+ * Processes STAND command.
  */
 void Server::handleStand(Client* client) {
     if (client->getState() != Protocol::PLAYING) {
@@ -832,10 +842,10 @@ void Server::handleStand(Client* client) {
 
     room->getGame()->playerStand(client);
 
-    // Zkontrolovat, zda hra skončila a případně vyčistit místnost
+    // Check if game ended and clean up room if needed
     room->checkAndHandleGameEnd();
 
-    // Pokud je místnost prázdná a ukončená, smazat ji
+    // If room is empty and finished, delete it
     if (room->getState() == ROOM_FINISHED && room->getPlayerCount() == 0) {
         int roomId = room->getId();
         rooms.erase(roomId);
@@ -843,7 +853,7 @@ void Server::handleStand(Client* client) {
 }
 
 /**
- * Validuje zprávu - kontroluje počet parametrů.
+ * Validates message - checks parameter count.
  */
 bool Server::validateMessage(Client* client, const std::vector<std::string>& parts, size_t expectedSize) {
     if (parts.size() != expectedSize) {
@@ -854,7 +864,7 @@ bool Server::validateMessage(Client* client, const std::vector<std::string>& par
 }
 
 /**
- * Zpracuje nevalidní zprávu.
+ * Processes invalid message.
  */
 void Server::handleInvalidMessage(Client* client, const std::string& reason) {
     LOG_WARNING("Invalid message from " + client->getAddress() + ": " + reason);
@@ -868,14 +878,14 @@ void Server::handleInvalidMessage(Client* client, const std::string& reason) {
 }
 
 /**
- * Kontroluje, zda je přezdívka již použita.
+ * Checks if nickname is already taken.
  */
 bool Server::isNicknameTaken(const std::string& nickname) {
     return activeNicknames.find(nickname) != activeNicknames.end();
 }
 
 /**
- * Odstraní klienty, kteří jsou timed out.
+ * Removes timed out clients.
  */
 void Server::cleanupTimedOutClients() {
     std::vector<Client*> timedOut;
@@ -893,7 +903,7 @@ void Server::cleanupTimedOutClients() {
 }
 
 /**
- * Najde místnost pro klienta.
+ * Finds room for client.
  */
 Room* Server::getRoomForClient(Client* client) {
     int roomId = client->getRoomId();
@@ -910,39 +920,39 @@ Room* Server::getRoomForClient(Client* client) {
 }
 
 /**
- * Zpracuje ACK_DEAL_CARDS zprávu.
+ * Processes ACK_DEAL_CARDS message.
  */
 void Server::handleAckDealCards(Client* client) {
-    // ACK přijato, klient zpracoval DEAL_CARDS
-    (void)client;  // Potlačení warningů pro nepoužitý parametr
+    // ACK received, client processed DEAL_CARDS
+    (void)client;  // Suppress warnings for unused parameter
 }
 
 /**
- * Zpracuje ACK_ROUND_END zprávu.
+ * Processes ACK_ROUND_END message.
  */
 void Server::handleAckRoundEnd(Client* client) {
-    // ACK přijato, klient zpracoval ROUND_END
+    // ACK received, client processed ROUND_END
     (void)client;
 }
 
 /**
- * Zpracuje ACK_GAME_END zprávu.
+ * Processes ACK_GAME_END message.
  */
 void Server::handleAckGameEnd(Client* client) {
-    // ACK přijato, klient zpracoval GAME_END
+    // ACK received, client processed GAME_END
     (void)client;
 }
 
 /**
- * Zpracuje ACK_GAME_STATE zprávu.
+ * Processes ACK_GAME_STATE message.
  */
 void Server::handleAckGameState(Client* client) {
-    // ACK přijato, klient zpracoval GAME_STATE
+    // ACK received, client processed GAME_STATE
     (void)client;
 }
 
 /**
- * Zpracuje RECONNECT_ACCEPT - hráč souhlasí s reconnectem.
+ * Processes RECONNECT_ACCEPT - player agrees to reconnect.
  */
 void Server::handleReconnectAccept(Client* client) {
     std::string nickname = client->getNickname();
@@ -1077,7 +1087,7 @@ void Server::handleReconnectAccept(Client* client) {
 }
 
 /**
- * Zpracuje RECONNECT_DECLINE - hráč odmítá reconnect, chce fresh login.
+ * Processes RECONNECT_DECLINE - player declines reconnect, wants fresh login.
  */
 void Server::handleReconnectDecline(Client* client) {
     std::string nickname = client->getNickname();
@@ -1160,7 +1170,7 @@ void Server::handleReconnectDecline(Client* client) {
 }
 
 /**
- * Odstraní hráče z disconnectedPlayers, kteří překročili timeout.
+ * Removes players from disconnectedPlayers who exceeded timeout.
  */
 void Server::cleanupTimedOutDisconnectedPlayers() {
     if (disconnectedPlayers.empty()) {
@@ -1241,21 +1251,21 @@ void Server::cleanupTimedOutDisconnectedPlayers() {
 }
 
 /**
- * Ukončí server.
+ * Shuts down the server.
  */
 void Server::shutdown() {
     running = false;
 
-    // Vymazání místností
+    // Delete rooms
     rooms.clear();
 
-    // Odpojení všech klientů
+    // Disconnect all clients
     for (const auto& pair : clients) {
         close(pair.first);
     }
     clients.clear();
 
-    // Uzavření server socketu
+    // Close server socket
     if (serverSocket >= 0) {
         close(serverSocket);
         serverSocket = -1;

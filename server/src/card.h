@@ -7,18 +7,30 @@
 #include <random>
 
 /**
- * Reprezentace herní karty.
+ * Representation of a game card.
  */
 class Card {
 public:
     enum Suit { SRDCE, KULE, LISTY, ZALUDY };
     enum Rank { SEDM, OSM, DEVET, DESET, SPODEK, SVRSEK, KRAL, ESO };
 
+    /**
+     * Card constructor.
+     * @param suit Card suit
+     * @param rank Card rank
+     */
     Card(Suit suit, Rank rank) : suit(suit), rank(rank) {}
 
+    /** Returns card suit */
     Suit getSuit() const { return suit; }
+
+    /** Returns card rank */
     Rank getRank() const { return rank; }
 
+    /**
+     * Returns point value of card according to Oko Bere rules.
+     * @return Card value (7-11)
+     */
     int getValue() const {
         switch (rank) {
             case SEDM: return 7;
@@ -34,6 +46,10 @@ public:
         }
     }
 
+    /**
+     * Returns string representation of card for protocol.
+     * @return Format "SUIT-RANK" (e.g. "SRDCE-ESO")
+     */
     std::string toString() const {
         std::string suitStr;
         switch (suit) {
@@ -64,14 +80,20 @@ private:
 };
 
 /**
- * Balíček karet.
+ * Deck of cards - 32 cards from Marias deck.
  */
 class Deck {
 public:
+    /**
+     * Deck constructor - creates and resets deck.
+     */
     Deck() {
         reset();
     }
 
+    /**
+     * Resets deck to 32 cards (all suits and ranks).
+     */
     void reset() {
         cards.clear();
         for (int s = Card::SRDCE; s <= Card::ZALUDY; s++) {
@@ -81,12 +103,20 @@ public:
         }
     }
 
+    /**
+     * Shuffles deck using Mersenne Twister generator.
+     */
     void shuffle() {
         std::random_device rd;
         std::mt19937 g(rd());
         std::shuffle(cards.begin(), cards.end(), g);
     }
 
+    /**
+     * Draws card from deck.
+     * If deck runs out, automatically resets and shuffles.
+     * @return Next card from deck
+     */
     Card draw() {
         if (cards.empty()) {
             reset();
@@ -97,6 +127,10 @@ public:
         return card;
     }
 
+    /**
+     * Returns number of cards remaining in deck.
+     * @return Number of cards
+     */
     size_t size() const {
         return cards.size();
     }

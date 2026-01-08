@@ -5,19 +5,19 @@
 #include <vector>
 
 /**
- * Konstanty a utility funkce pro práci s protokolem.
+ * Constants and utility functions for protocol operations.
  */
 namespace Protocol {
-    // Konstanty protokolu
+    // Protocol constants
     const char DELIMITER = '|';
     const char MESSAGE_END = '\n';
     const int MAX_MESSAGE_SIZE = 4096;
     const int MAX_INVALID_MESSAGES = 3;
 
-    // Timeouty (v sekundách)
+    // Timeouts (in seconds)
     const int RECONNECT_TIMEOUT = 30;
 
-    // Příkazy klient -> server
+    // Commands client -> server
     const std::string CMD_LOGIN = "LOGIN";
     const std::string CMD_PING = "PING";
     const std::string CMD_DISCONNECT = "DISCONNECT";
@@ -30,7 +30,7 @@ namespace Protocol {
     const std::string CMD_STAND = "STAND";
     const std::string CMD_RECONNECT = "RECONNECT";
 
-    // Příkazy server -> klient
+    // Commands server -> client
     const std::string CMD_OK = "OK";
     const std::string CMD_ERROR = "ERROR";
     const std::string CMD_PONG = "PONG";
@@ -50,18 +50,18 @@ namespace Protocol {
     const std::string CMD_PLAYER_RECONNECTED = "PLAYER_RECONNECTED";
     const std::string CMD_OPPONENT_LEFT = "OPPONENT_LEFT";  // Opponent declined reconnect or timed out
 
-    // Reconnect prompt zprávy
-    const std::string CMD_RECONNECT_QUERY = "RECONNECT_QUERY";      // server -> klient
-    const std::string CMD_RECONNECT_ACCEPT = "RECONNECT_ACCEPT";    // klient -> server
-    const std::string CMD_RECONNECT_DECLINE = "RECONNECT_DECLINE";  // klient -> server
+    // Reconnect prompt messages
+    const std::string CMD_RECONNECT_QUERY = "RECONNECT_QUERY";      // server -> client
+    const std::string CMD_RECONNECT_ACCEPT = "RECONNECT_ACCEPT";    // client -> server
+    const std::string CMD_RECONNECT_DECLINE = "RECONNECT_DECLINE";  // client -> server
 
-    // ACK zprávy (klient -> server)
+    // ACK messages (client -> server)
     const std::string CMD_ACK_DEAL_CARDS = "ACK_DEAL_CARDS";
     const std::string CMD_ACK_ROUND_END = "ACK_ROUND_END";
     const std::string CMD_ACK_GAME_END = "ACK_GAME_END";
     const std::string CMD_ACK_GAME_STATE = "ACK_GAME_STATE";
 
-    // Stavy klienta
+    // Client states
     enum ClientState {
         CONNECTED,
         LOBBY,
@@ -69,7 +69,7 @@ namespace Protocol {
         PLAYING
     };
 
-    // Utility funkce
+    // Utility functions
     std::vector<std::string> parseMessage(const std::string& message);
     std::string buildMessage(const std::vector<std::string>& parts);
     std::string escapeString(const std::string& str);

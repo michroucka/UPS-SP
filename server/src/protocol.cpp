@@ -5,9 +5,9 @@
 namespace Protocol {
 
 /**
- * Parsuje zprávu protokolu na jednotlivé části.
- * @param message Zpráva k parsování (bez \n na konci)
- * @return Vector obsahující jednotlivé části zprávy
+ * Parses protocol message into parts.
+ * @param message Message to parse (without \n at the end)
+ * @return Vector containing individual message parts
  */
 std::vector<std::string> parseMessage(const std::string& message) {
     std::vector<std::string> parts;
@@ -22,9 +22,9 @@ std::vector<std::string> parseMessage(const std::string& message) {
 }
 
 /**
- * Sestaví zprávu protokolu z jednotlivých částí.
- * @param parts Vector obsahující části zprávy
- * @return Kompletní zpráva včetně \n na konci
+ * Builds protocol message from parts.
+ * @param parts Vector containing message parts
+ * @return Complete message including \n at the end
  */
 std::string buildMessage(const std::vector<std::string>& parts) {
     if (parts.empty()) {
@@ -44,23 +44,21 @@ std::string buildMessage(const std::vector<std::string>& parts) {
 }
 
 /**
- * Escapuje speciální znaky v řetězci.
- * @param str Řetězec k escapování
- * @return Escapovaný řetězec
+ * Escapes special characters in string.
+ * @param str String to escape
+ * @return Escaped string
  */
 std::string escapeString(const std::string& str) {
     std::string result = str;
-    // Nahradí | za _
     std::replace(result.begin(), result.end(), DELIMITER, '_');
-    // Nahradí \n za mezeru
     std::replace(result.begin(), result.end(), MESSAGE_END, ' ');
     return result;
 }
 
 /**
- * Validuje přezdívku.
- * @param nickname Přezdívka k validaci
- * @return true pokud je přezdívka validní, false jinak
+ * Validates nickname.
+ * @param nickname Nickname to validate
+ * @return true if nickname is valid, false otherwise
  */
 bool isValidNickname(const std::string& nickname) {
     if (nickname.empty() || nickname.length() > 20) {
@@ -69,7 +67,7 @@ bool isValidNickname(const std::string& nickname) {
 
     bool hasNonWhitespace = false;
 
-    // Kontrola, že neobsahuje speciální znaky a není pouze whitespace
+    // Check that it doesn't contain special characters and isn't only whitespace
     for (char c : nickname) {
         // VALIDATION: Reject delimiter, newline, carriage return
         if (c == DELIMITER || c == MESSAGE_END || c == '\r') {

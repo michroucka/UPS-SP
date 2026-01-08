@@ -6,7 +6,7 @@
 #include "protocol.h"
 
 /**
- * Reprezentace připojeného klienta.
+ * Representation of a connected client.
  */
 class Client {
 public:

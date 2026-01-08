@@ -22,8 +22,8 @@ public class GameClient {
     private int yourScore;
     private int opponentScore;
     private int currentRound;
-    private int playerHandValue;      // Hodnota hráčovy ruky (ze serveru)
-    private int opponentHandValue;    // Hodnota soupeřovy ruky (ze serveru)
+    private int playerHandValue;      // Player's hand value (from server)
+    private int opponentHandValue;    // Opponent's hand value (from server)
 
     // Reconnect query info
     private boolean hasPendingReconnectQuery;

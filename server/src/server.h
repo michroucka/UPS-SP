@@ -10,8 +10,8 @@
 #include "room.h"
 
 /**
- * Hlavní třída TCP serveru pro hru Oko Bere.
- * Používá select() pro paralelní obsluhu více klientů.
+ * Main TCP server class for Oko Bere game.
+ * Uses select() for parallel handling of multiple clients.
  */
 class Server {
 public:
@@ -23,7 +23,7 @@ public:
     void shutdown();
 
 private:
-    // Síťové funkce
+    // Network functions
     bool createSocket();
     bool bindSocket();
     bool listenSocket();
@@ -32,7 +32,7 @@ private:
     void sendToClient(Client* client, const std::string& message);
     void disconnectClient(Client* client, const std::string& reason);
 
-    // Zpracování zpráv
+    // Message processing
     void processMessage(Client* client, const std::string& message);
     void handleLogin(Client* client, const std::vector<std::string>& parts);
     void handlePing(Client* client);
@@ -50,7 +50,7 @@ private:
     void handleReconnectAccept(Client* client);
     void handleReconnectDecline(Client* client);
 
-    // Validace
+    // Validation
     bool validateMessage(Client* client, const std::vector<std::string>& parts, size_t expectedSize);
     void handleInvalidMessage(Client* client, const std::string& reason);
 
@@ -60,13 +60,13 @@ private:
     void cleanupTimedOutDisconnectedPlayers();
     Room* getRoomForClient(Client* client);
 
-    // Konfigurace serveru
+    // Server configuration
     std::string address;
     int port;
     int serverSocket;
     bool running;
 
-    // Klienti
+    // Clients
     std::map<int, std::unique_ptr<Client>> clients;  // socket -> Client
     std::set<std::string> activeNicknames;
 
@@ -78,11 +78,11 @@ private:
     };
     std::map<std::string, DisconnectedPlayerInfo> disconnectedPlayers;  // nickname -> info
 
-    // Místnosti
+    // Rooms
     std::map<int, std::unique_ptr<Room>> rooms;  // roomId -> Room
     int nextRoomId;
 
-    // Limity
+    // Limits
     const int MAX_CLIENTS;
     const int CLIENT_TIMEOUT = 10;  // 10 seconds (client sends PING every 5s)
     const int MAX_ROOMS;

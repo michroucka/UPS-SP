@@ -7,7 +7,7 @@
 #include <ctime>
 
 /**
- * Jednoduchý logger pro zaznamenávání událostí serveru.
+ * Simple logger for recording server events.
  */
 class Logger {
 public:
@@ -37,7 +37,7 @@ private:
     bool consoleOutput;
 };
 
-// Makra pro jednoduché použití
+// Macros for easy usage
 #define LOG_INFO(msg) Logger::getInstance().log(Logger::INFO, msg)
 #define LOG_WARNING(msg) Logger::getInstance().log(Logger::WARNING, msg)
 #define LOG_ERROR(msg) Logger::getInstance().log(Logger::ERROR, msg)

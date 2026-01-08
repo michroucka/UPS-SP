@@ -8,7 +8,7 @@
 #include "game.h"
 
 /**
- * Stav místnosti.
+ * Room state.
  */
 enum RoomState {
     ROOM_WAITING,
@@ -17,30 +17,91 @@ enum RoomState {
 };
 
 /**
- * Herní místnost pro 2 hráče.
+ * Game room for 2 players.
  */
 class Room {
 public:
+    /**
+     * Room constructor.
+     * @param id Unique room ID
+     * @param name Room name
+     * @param creator Client who created the room
+     */
     Room(int id, const std::string& name, Client* creator);
+
+    /**
+     * Destructor - releases game.
+     */
     ~Room();
 
+    /** Returns room ID */
     int getId() const { return id; }
+
+    /** Returns room name */
     std::string getName() const { return name; }
+
+    /** Returns room state */
     RoomState getState() const { return state; }
+
+    /** Returns number of players in room */
     int getPlayerCount() const { return players.size(); }
+
+    /** Returns maximum number of players (2) */
     int getMaxPlayers() const { return MAX_PLAYERS; }
 
+    /**
+     * Checks if room is full.
+     * @return true if 2 players, false otherwise
+     */
     bool isFull() const { return players.size() >= MAX_PLAYERS; }
+
+    /**
+     * Checks if room contains given player.
+     * @param client Client to verify
+     * @return true if player is in room, false otherwise
+     */
     bool hasPlayer(Client* client) const;
 
+    /**
+     * Adds player to room. If room is full, starts game.
+     * @param client Client to add
+     * @return true if added, false on error
+     */
     bool addPlayer(Client* client);
-    void removePlayer(Client* client, bool isDisconnect = false);
-    void reconnectPlayer(Client* client);  // Add player back after disconnect
 
+    /**
+     * Removes player from room.
+     * @param client Client to remove
+     * @param isDisconnect true on disconnect (game waits for reconnect), false on intentional leave
+     */
+    void removePlayer(Client* client, bool isDisconnect = false);
+
+    /**
+     * Reconnects disconnected player (after reconnect).
+     * @param client Client to reconnect
+     */
+    void reconnectPlayer(Client* client);
+
+    /**
+     * Starts game with 2 players.
+     */
     void startGame();
+
+    /**
+     * Returns pointer to game.
+     * @return Pointer to game or nullptr
+     */
     Game* getGame() { return game; }
+
+    /**
+     * Checks game end and returns players to lobby.
+     */
     void checkAndHandleGameEnd();
-    void resetGame();  // Delete game and reset to WAITING state
+
+    /**
+     * Resets game and returns room to WAITING state.
+     */
+    void resetGame();
 
     std::string getStateString() const {
         switch (state) {

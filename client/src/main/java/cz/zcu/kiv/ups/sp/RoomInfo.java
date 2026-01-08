@@ -1,7 +1,7 @@
 package cz.zcu.kiv.ups.sp;
 
 /**
- * Reprezentace místnosti pro zobrazení v tabulce
+ * Room representation for display in table
  */
 public class RoomInfo {
     private final String id;

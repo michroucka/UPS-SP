@@ -155,6 +155,10 @@ public class GameController {
         });
     }
 
+    /**
+     * FXML handler - connects to server and logs in.
+     * Validates input, creates client, sends LOGIN, handles reconnect query.
+     */
     @FXML
     private void handleConnect() {
         String host = serverHostField.getText().trim();
@@ -392,7 +396,7 @@ public class GameController {
         // Stop message processing
         stopMessageReceiver();
 
-        // Update UI - viditelná informace
+        // Update UI - visible information
         Platform.runLater(() -> {
             connectionStatus.setText("Server Unavailable");
             connectionStatus.setStyle("-fx-text-fill: #f44336; -fx-font-weight: bold;");
@@ -633,6 +637,10 @@ public class GameController {
     }
 
 
+    /**
+     * FXML handler - player takes a card (HIT action).
+     * Sends HIT command to server, waits for response and updates UI.
+     */
     @FXML
     private void handleHit() {
         if (gameClient == null) return;
@@ -690,6 +698,10 @@ public class GameController {
         }).start();
     }
 
+    /**
+     * FXML handler - player stands (STAND action).
+     * Sends STAND command to server, waits for response and passes turn to opponent.
+     */
     @FXML
     private void handleStand() {
         if (gameClient == null) return;
@@ -1085,7 +1097,9 @@ public class GameController {
     }
 
     /**
-     * Attempts to reconnect to the server automatically
+     * Attempts to automatically reconnect to server.
+     * Uses exponential backoff (2s->5s) and max 5 attempts.
+     * On success, restores session using session ID.
      */
     private void attemptReconnect() {
         if (isReconnecting || manualDisconnect) {
@@ -1323,6 +1337,13 @@ public class GameController {
         }
     }
 
+    /**
+     * Processes all incoming messages from server (async).
+     * Decides based on command type and calls appropriate handler methods.
+     * Runs in message processor thread.
+     *
+     * @param msg Message to process
+     */
     private void handleMessage(ProtocolMessage msg) {
         Platform.runLater(() -> {
             String cmd = msg.getCommand();
@@ -1577,7 +1598,7 @@ public class GameController {
         }
 
 
-        // Uložit hodnoty do GameClient (ze serveru)
+        // Store values in GameClient (from server)
         gameClient.setPlayerHandValue(yourTotalInt);
         gameClient.setOpponentHandValue(opponentTotalInt);
 

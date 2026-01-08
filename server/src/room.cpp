@@ -47,7 +47,7 @@ bool Room::addPlayer(Client* client) {
     client->setRoomId(id);
     client->setState(Protocol::IN_ROOM);
 
-    // Pokud je místnost plná, spustit hru
+    // If room is full, start the game
     if (isFull()) {
         startGame();
     }
@@ -60,12 +60,12 @@ void Room::removePlayer(Client* client, bool isDisconnect) {
 
     std::string leavingPlayerName = client->getNickname();
 
-    // Pokud hra běží, informovat ostatní hráče
+    // If game is running, inform other players
     if (state == ROOM_PLAYING) {
         if (isDisconnect) {
             LOG_INFO("Player " + leavingPlayerName + " disconnected from ongoing game in room " + std::to_string(id) + " - game waiting for reconnect");
 
-            // Informovat ostatní hráče o odpojení (hra pokračuje, čeká na reconnect)
+            // Inform other players about disconnection (game continues, waiting for reconnect)
             for (Client* player : players) {
                 if (player != client) {
                     player->queueMessage(Protocol::buildMessage({
@@ -77,30 +77,30 @@ void Room::removePlayer(Client* client, bool isDisconnect) {
         } else {
             LOG_INFO("Player " + leavingPlayerName + " left active game in room " + std::to_string(id));
 
-            // Informovat ostatní hráče
+            // Inform other players
             for (Client* player : players) {
                 if (player != client) {
                     player->queueMessage(Protocol::buildMessage({
                         Protocol::CMD_PLAYER_DISCONNECTED,
                         leavingPlayerName
                     }));
-                    // Vrátit zbývající hráče zpět do stavu IN_ROOM (čekání na dalšího hráče)
+                    // Return remaining players back to IN_ROOM state (waiting for another player)
                     player->setState(Protocol::IN_ROOM);
                 }
             }
 
-            // Ukončit hru (úmyslné opuštění)
+            // End game (intentional leave)
             if (game) {
                 delete game;
                 game = nullptr;
             }
 
-            // Změnit stav místnosti zpět na WAITING
+            // Change room state back to WAITING
             state = ROOM_WAITING;
         }
     }
 
-    // Odebrat opouštějícího hráče z místnosti
+    // Remove the leaving player from the room
     for (auto it = players.begin(); it != players.end(); ++it) {
         if (*it == client) {
             players.erase(it);
@@ -161,16 +161,16 @@ void Room::checkAndHandleGameEnd() {
     if (game->isGameOver()) {
         LOG_INFO("Game in room " + std::to_string(id) + " ended");
 
-        // Nastavit stav místnosti na FINISHED
+        // Set room state to FINISHED
         state = ROOM_FINISHED;
 
-        // Odebrat hráče z místnosti a vrátit je do lobby
+        // Remove players from room and return them to lobby
         for (Client* player : players) {
             player->setRoomId(-1);
             player->setState(Protocol::LOBBY);
         }
 
-        // Vyčistit seznam hráčů
+        // Clear player list
         players.clear();
     }
 }
