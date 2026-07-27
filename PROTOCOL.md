@@ -133,7 +133,3 @@ sequenceDiagram
         S-->>B: OPPONENT_LEFT|nickA|timeout
     end
 ```
-
----
-
-*Diagrams use Mermaid syntax - GitHub renders them automatically in this file's preview.*

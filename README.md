@@ -64,7 +64,19 @@ On startup, enter the server address, port and a nickname to connect. From the l
 
 ## Protocol
 
-See [PROTOCOL.md](PROTOCOL.md) for the message format, client state machine, and sequence diagrams covering login/lobby, a full game round, and the disconnect/reconnect flow.
+See [PROTOCOL.md](PROTOCOL.md) for the full message format and sequence diagrams covering login/lobby, a full game round, and the disconnect/reconnect flow. Client state machine:
+
+```mermaid
+stateDiagram-v2
+    [*] --> CONNECTED: TCP connection established
+    CONNECTED --> LOBBY: LOGIN successful
+    LOBBY --> IN_ROOM: JOIN_ROOM / CREATE_ROOM
+    IN_ROOM --> PLAYING: GAME_START (2nd player joined)
+    PLAYING --> IN_ROOM: GAME_END, opponent left
+    IN_ROOM --> LOBBY: LEAVE_ROOM
+    CONNECTED --> [*]: DISCONNECT / error
+    PLAYING --> [*]: TCP connection lost (→ DisconnectedPlayerInfo)
+```
 
 If a player drops mid-game, the opponent is notified and the game waits for them to come back:
 
@@ -77,3 +89,11 @@ If the returning client lost its session (e.g. the app was restarted), it prompt
 ## Documentation
 
 [docs/UPS_Doc.pdf](docs/UPS_Doc.pdf) - the full project documentation submitted for the course (in Czech): game rules, protocol specification, implementation details (module breakdown, concurrency model, reconnect mechanism), build/run instructions, and testing notes.
+
+## Credits
+
+Card images in `client/src/main/resources/cz/zcu/kiv/ups/sp/assets/` are from [tomasdrus/hungarian-playing-cards](https://github.com/tomasdrus/hungarian-playing-cards) and are not covered by this project's license.
+
+## License
+
+MIT, except for the card images - see [LICENSE](LICENSE) and [Credits](#credits).
